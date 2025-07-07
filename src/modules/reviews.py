@@ -1,364 +1,262 @@
 # import csv
-import json
-from src.core.config import SERP_API_KEY
-from src.utils.parsing import analyze_photo_data, count_customer_photos
+# import json
 from serpapi import GoogleSearch
+from src.core.config import SERP_API_KEY
 
 
-def get_reviews(
-    query, location_name=None, latitude=None, longitude=None, radius_miles=None
-):
+def _fetch_all_posts(data_id: str):
     """
-    Fetches, sorts, and saves reviews for a given business found based on
-    search criteria.
+    Private helper to fetch all the post for a given data_id.
+    """
+    all_posts = []
+    if not data_id:
+        return all_posts
 
-    Args:
-        query (str): The type of business or place name (e.g., "Starbucks").
-        location_name (str, optional): A location name like "Cebu, Philippines"
-          or a zipcode.
-        latitude (float, optional): The latitude of the searched location.
-        longitude (float, optional): The longitude of the searched location.
-        radius_miles (float, optional): The search radius in miles
-         (only used with lat/lon).
+    posts_params = {
+        "engine": "google_maps",
+        "data_id": data_id,
+        "api_key": SERP_API_KEY,
+    }
+
+    while True:
+        posts_results = GoogleSearch(posts_params).get_dict()
+        posts = posts_results.get("posts", [])
+        if not posts:
+            break
+        all_posts.extend(posts)
+
+        if "next" not in posts_results.get("serpapi_pagination", {}):
+            break
+        posts_params["next_page_token"] = posts_results["serpapi_pagination"][
+            "next_page_token"
+        ]
+
+    return all_posts
+
+
+def _fetch_all_photos(data_id: str) -> list:
+    """
+    Private helper to fetch all the photo URLs for a given data_id.
     """
 
-    API_KEY = SERP_API_KEY
+    all_photos = []
+    if not data_id:
+        return all_photos
 
-    if not API_KEY:
-        print("Error: SERP_API_KEY not foun. Make sure it's set in your .env file.")
-        exit()
+    photos_params = {
+        "engine": "google_maps_photos",
+        "data_id": data_id,
+        "api_key": SERP_API_KEY,
+    }
 
-    print(f"--- Step 1: Searching for {query} ---")
+    while True:
+        photos_results = GoogleSearch(photos_params).get_dict()
+        photos = photos_results.get("photos", [])
+        if not photos:
+            break
+        all_photos.extend(photos)
+
+        if (
+            "next" not in photos_results.get("serpapi_pagination", {})
+            or len(all_photos) == 100
+        ):
+            break
+        photos_params["next_page_token"] = photos_results["serpapi_pagination"][
+            "next_page_token"
+        ]
+
+        return all_photos
+
+
+def _fetch_knowledge_graph_socials(query: str) -> list:
+    """
+    Performs a regular Google search to find the social profiles in the Knowledge Graph.
+    """
+
+    print("[Info] Checking Google Knowledge Panel for social links...")
+    params = {
+        "engine": "google",
+        "q": query,
+        "api_key": SERP_API_KEY,
+    }
+    search = GoogleSearch(params)
+    results = search.get_dict()
+
+    knowledge_graph = results.get("knowledge_graph", {})
+    profiles = knowledge_graph.get("profiles", [])
+
+    standardized_profiles = []
+    for profile in profiles:
+        standardized_profiles.append(
+            {
+                "name": profile.get("name"),
+                "link": profile.get("link"),
+            }
+        )
+
+    return standardized_profiles
+
+
+def _fetch_all_reviews(place_id: str) -> list:
+    """
+    Fetches all reviews for a given place_id by paginating.
+    """
+    all_reviews = []
+    if not place_id:
+        return all_reviews
+
+    reviews_params = {
+        "engine": "google_maps_reviews",
+        "place_id": place_id,
+        "api_key": SERP_API_KEY,
+    }
+
+    print("[Info] Fetching all reviews to count every customer photo...")
+    while True:
+        reviews_results = GoogleSearch(reviews_params).get_dict()
+        reviews = reviews_results.get("reviews", [])
+        if not reviews:
+            break
+        all_reviews.extend(reviews)
+
+        if (
+            "next" not in reviews_results.get("serpapi_pagination", {})
+            or len(all_reviews) == 100
+        ):
+            break
+        reviews_params["next_page_token"] = reviews_results["serpapi_pagination"][
+            "next_page_token"
+        ]
+
+    return all_reviews
+
+
+def _get_photo_counts(place_data: dict, all_reviews: list, business_title: str) -> dict:
+    """
+    Performs a continuous count of all identifiable owner and customer photos.
+    """
+
+    owner_photo_count = 0
+    customer_photo_count = 0
+
+    if place_data.get("thumbnail"):
+        owner_photo_count += 1
+
+    main_photos = place_data.get("photos", [])
+    for photo in main_photos:
+        if (
+            photo.get("title", "").lower() == "by owner"
+            or photo.get("user", {}).get("name") == business_title
+            or photo.get("user", {}).get("name") == "foodpanda"
+        ):
+            owner_photo_count += 1
+
+    for review in all_reviews:
+        customer_photo_count += len(review.get("images", []))
+
+    return {
+        "owner_photo_count": owner_photo_count,
+        "customer_photo_count": customer_photo_count,
+    }
+
+
+def analyze_profile(query: str) -> dict:
+    """
+    Fetches and analyzes a Google Business Profile, returning a
+    dictionary of the findings.
+    This function does not print. It returns structured data.
+    """
+
+    analysis_result = {
+        "query": query,
+        "success": False,
+        "error": None,
+        "data": {},
+    }
 
     search_params = {
         "engine": "google_maps",
         "q": query,
         "type": "search",
-        "api_key": API_KEY,
+        "api_key": SERP_API_KEY,
     }
+    initial_results = GoogleSearch(search_params).get_dict()
 
-    if latitude and longitude:
-        search_params["ll"] = f"@{latitude},{longitude},15z"
-        print(f"Searching by coordinates: {latitude}, {longitude}")
-        if radius_miles:
-            radius_meters = int(radius_miles * 1609.34)
-            search_params["radius"] = radius_meters
-            print(f"Using a radius of {radius_meters} miles ({radius_meters} meters)")
-    elif location_name:
-        search_params["location"] = location_name
-        print(f"Searching by location: {location_name}")
+    first_result = None
+    if initial_results.get("error"):
+        analysis_result["error"] = initial_results["error"]
+        return analysis_result
 
-    search = GoogleSearch(search_params)
-    search_results = search.get_dict()
-
-    target_place_id = None
-    target_data_id = None
-    business_title = ""
-
-    if "place_results" in search_results:
-        print("--- Found a specific 'place_results' object. ---")
-        first_result = search_results["place_results"]
-        target_place_id = first_result.get("place_id")
-        target_data_id = first_result.get("data_id")
-        business_title = first_result.get("title")
-        business_address = first_result.get("address")
-        business_phone = first_result.get("phone")
-        business_site = first_result.get("website")
-        print("Found business: ", business_title)
-        print("Located at: ", business_address)
-        print("Contact: ", business_phone)
-        print("Website: ", business_site)
-        print("With a rating of: ", first_result.get("rating"))
-        print("A total reviews of: ", first_result.get("reviews"))
-        print("Successfully extracted its place_id: ", target_place_id)
-        print("Successfully extracted its place_id: ", target_data_id)
-
-        details_params = {
-            "engine": "google_maps",
-            "place_id": target_place_id,
-            "api_key": API_KEY,
-        }
-
-        details_search = GoogleSearch(details_params)
-        details_results = details_search.get_dict()
-        place_data = details_results.get("place_results", {})
-
-        print("\n" + "="*20 + " DEBUGGING " + "="*20)
-        print("--- FULL 'place_data' OBJECT STRUCTURE ---")
-        # This will "pretty-print" the entire dictionary so we can inspect it.
-        print(json.dumps(place_data, indent=2))
-        print("--- END OF DEBUGGING ---")
-        print("="*53 + "\n")
-
-        print("--- Analyzing for Social Media Links... ---")
-        social_links = place_data.get("links", []) # Use .get() for safety
-
-        if social_links:
-            print(f"--- Success! Found {len(social_links)} social media profiles. ---")
-            for profile in social_links:
-                name = profile.get("name")
-                link = profile.get("link")
-                print(f"  - {name}: {link}")
-        else:
-            print("--- No social media links found for this business. ---")
-
-        print("--- Analyzing photos from user reviews... ---")
-
-        # Get the rich user reviews block from the details call
-        user_reviews_data = place_data.get("user_reviews", {})
-
-        # Count customer photos from within the reviews
-        customer_photo_count = count_customer_photos(user_reviews_data)
-
-        print("Total customer photo count:", customer_photo_count)
-
-        print("--- Step 1.6: Extracting Attributes from 'extensions' ---")
-        attributes_list = []
-
-        # Get the 'extensions' list from the place_data
-        extensions_data = place_data.get("extensions")
-
-        # Check if extensions_data exists and is a list
-        if extensions_data and isinstance(extensions_data, list):
-            # Loop through each dictionary in the 'extensions' list (e.g., {"service_options": [...]})
-            for item in extensions_data:
-                # Loop through the values of that dictionary (which will be the list of actual attributes)
-                for attribute_group in item.values():
-                    if isinstance(attribute_group, list):
-                        # Add the attributes from the group to our main list
-                        attributes_list.extend(attribute_group)
-
-        # Now, we print the results based on the 'attributes_list' we just built
-        if attributes_list:
-            print(
-                f"--- Success! Found {len(attributes_list)} attributes for this business ---"
-            )
-            for attr in attributes_list:
-                print(f"  - {attr}")
-        else:
-            print("--- No attributes found under the 'extensions' key. ---")
-
-        print("--- Fetching all posts for analysis... ---")
-        all_posts = []
-        if target_data_id:
-            posts_params = {
-                "engine": "google_maps_posts",
-                "data_id": target_data_id,  # Use data_id for posts
-                "api_key": API_KEY,
-            }
-            while True:
-                posts_search = GoogleSearch(posts_params)
-                posts_results = posts_search.get_dict()
-                if "posts" in posts_results:
-                    all_posts.extend(posts_results["posts"])
-                else:
-                    break
-                if "next" not in posts_results.get("serpapi_pagination", {}):
-                    break
-                posts_params["next_page_token"] = posts_results["serpapi_pagination"][
-                    "next_page_token"
-                ]
-
-        if all_posts:
-            # --- 2. ADD THIS DEBUGGING BLOCK ---
-            print(f"--- Success! Found a total of {len(all_posts)} posts. ---")
-
-            # This is the original code that is currently failing
-            most_recent_post = all_posts[0]
-            date_of_recent_post = most_recent_post.get("posted_at_text", "Date not available")
-
-            print(f"Date of most recent post: {date_of_recent_post}")
-        else:
-            print("--- No posts found for this business. ---")
-
-        if target_data_id:
-            print("--- Fetching place details for photo count... ---")
-
-            all_photos = []
-            photos_params = {
-                "engine": "google_maps_photos",
-                "data_id": target_data_id,  # Use data_id for photos engine
-                "api_key": API_KEY,
-            }
-
-            while True:
-                photos_search = GoogleSearch(photos_params)
-                photos_results = photos_search.get_dict()
-
-                if "photos" in photos_results:
-                    all_photos.extend(photos_results["photos"])
-                else:
-                    break  # Exit if no photos on the page
-
-                if "next" not in photos_results.get("serpapi_pagination", {}):
-                    break  # Exit if it's the last page
-
-                # Get the token for the next page of photos
-                photos_params["next_page_token"] = photos_results["serpapi_pagination"][
-                    "next_page_token"
-                ]
-
-                if len(all_photos) == 100:
-                    break
-
-            photo_count = len(all_photos)
-            print(f"And a total of {photo_count} photos.")
-
-            owner_count, customer_count = analyze_photo_data(all_photos, business_title)
-            print(f"--- Found {len(all_photos)} total photos. ---")
-            print(f"    - Owner-uploaded: {owner_count}")
-            print(f"    - Customer-uploaded: {customer_count}")
-            print("-" * 28)
-
-    elif "local_results" in search_results and len(search_results["local_results"]) > 0:
-        first_result = search_results["local_results"][0]
-        target_place_id = first_result.get("place_id")
-        target_data_id = first_result.get("data_id")
-        business_title = first_result.get("title")
-        business_address = first_result.get("address")
-        business_phone = first_result.get("phone")
-        business_site = first_result.get("website")
-        print("Found business: ", business_title)
-        print("Located at: ", business_address)
-        print("Contact: ", business_phone)
-        print("Website: ", business_site)
-        print("With a rating of: ", first_result.get("rating"))
-        print("A total reviews of: ", first_result.get("reviews"))
-        print("Successfully extracted its place_id: ", target_place_id)
-        print("Successfully extracted its place_id: ", target_data_id)
-
-        details_params = {
-            "engine": "google_maps",
-            "place_id": target_place_id,
-            "api_key": API_KEY,
-        }
-
-        details_search = GoogleSearch(details_params)
-        details_results = details_search.get_dict()
-        place_data = details_results.get("place_results", {})
-
-        photo_sample = place_data.get("user_photos", [])
-
-        if photo_sample:
-            print("--- Analyzing photo sample for Owner vs. Customer uploads... ---")
-
-            # Now, analyze and score the photos using the rich sample data
-            owner_count, customer_count = analyze_photo_data(photo_sample, business_title)
-
-            print(f"--- Analysis based on a sample of {len(photo_sample)} photos ---")
-            print(f"    - Owner-uploaded in sample: {owner_count}")
-            print(f"    - Customer-uploaded in sample: {customer_count}")
-        else:
-            print("--- No photo sample available in the details API response. ---")
-
-        print("--- Step 1.6: Extracting Attributes from 'extensions' ---")
-        attributes_list = []
-
-        # Get the 'extensions' list from the place_data
-        extensions_data = place_data.get("extensions")
-
-        # Check if extensions_data exists and is a list
-        if extensions_data and isinstance(extensions_data, list):
-            # Loop through each dictionary in the 'extensions' list (e.g., {"service_options": [...]})
-            for item in extensions_data:
-                # Loop through the values of that dictionary (which will be the list of actual attributes)
-                for attribute_group in item.values():
-                    if isinstance(attribute_group, list):
-                        # Add the attributes from the group to our main list
-                        attributes_list.extend(attribute_group)
-
-        # Now, we print the results based on the 'attributes_list' we just built
-        if attributes_list:
-            print(
-                f"--- Success! Found {len(attributes_list)} attributes for this business ---"
-            )
-            for attr in attributes_list:
-                print(f"  - {attr}")
-        else:
-            print("--- No attributes found under the 'extensions' key. ---")
-
-        print("--- Fetching all posts for analysis... ---")
-        all_posts = []
-        if target_data_id:
-            posts_params = {
-                "engine": "google_maps_posts",
-                "data_id": target_data_id,  # Use data_id for posts
-                "api_key": API_KEY,
-            }
-            while True:
-                posts_search = GoogleSearch(posts_params)
-                posts_results = posts_search.get_dict()
-                if "posts" in posts_results:
-                    all_posts.extend(posts_results["posts"])
-                else:
-                    break
-                if "next" not in posts_results.get("serpapi_pagination", {}):
-                    break
-                posts_params["next_page_token"] = posts_results["serpapi_pagination"][
-                    "next_page_token"
-                ]
-
-        if all_posts:
-            # --- 2. ADD THIS DEBUGGING BLOCK ---
-            print(f"--- Success! Found a total of {len(all_posts)} posts. ---")
-
-            # This is the original code that is currently failing
-            most_recent_post = all_posts[0]
-            date_of_recent_post = most_recent_post.get("posted_at_text", "Date not available")
-
-            print(f"Date of most recent post: {date_of_recent_post}")
-        else:
-            print("--- No posts found for this business. ---")
-
-        if target_data_id:
-            print("--- Fetching place details for photo count... ---")
-
-            all_photos = []
-            photos_params = {
-                "engine": "google_maps_photos",
-                "data_id": target_data_id,  # Use data_id for photos engine
-                "api_key": API_KEY,
-            }
-
-            while True:
-                photos_search = GoogleSearch(photos_params)
-                photos_results = photos_search.get_dict()
-
-                if "photos" in photos_results:
-                    all_photos.extend(photos_results["photos"])
-                else:
-                    break  # Exit if no photos on the page
-
-                if "next" not in photos_results.get("serpapi_pagination", {}):
-                    break  # Exit if it's the last page
-
-                # Get the token for the next page of photos
-                photos_params["next_page_token"] = photos_results["serpapi_pagination"][
-                    "next_page_token"
-                ]
-
-                if len(all_photos) == 100:
-                    break
-
-            photo_count = len(all_photos)
-            print(f"And a total of {photo_count} photos.")
+    if "place_results" in initial_results:
+        first_result = initial_results["place_results"]
+    elif "local_results" in initial_results and initial_results["local_results"]:
+        first_result = initial_results["local_results"][0]
     else:
-        print("Could not find any local results for the search query.")
-        if "error" in search_results:
-            print(f"API Error: {search_results['error']}")
-        exit()
+        analysis_result["error"] = "No GBP found for this query."
+        return analysis_result
 
+    place_id = first_result.get("place_id")
+    data_id = first_result.get("data_id")
+    business_title = first_result.get("title")
 
-if __name__ == "__main__":
+    details_params = {
+        "engine": "google_maps",
+        "data_id": data_id,
+        "api_key": SERP_API_KEY,
+    }
+    details_results = GoogleSearch(details_params).get_dict()
+    place_data = details_results.get("place_results", {})
 
-    # Example 1: Mimicking a Zipcode and Radius search from your form
-    print("\n--- EXAMPLE 1: SEARCHING BY ZIPCODE ---")
-    get_reviews(query="Pilsen Yards, 60608, USA", location_name=None)
+    details_params = {
+        "engine": "google_maps",
+        "place_id": place_id,
+        "api_key": SERP_API_KEY,
+    }
+    details_results = GoogleSearch(details_params).get_dict()
+    place_data = details_results.get("place_results", {})
 
-    print("\n" + "=" * 50 + "\n")
+    analysis_result["success"] = True
+    result_data = analysis_result["data"]
 
-    # Example 2: Mimicking a Latitude/Longitude and Radius search
-    print("--- EXAMPLE 2: SEARCHING BY COORDINATES & RADIUS ---")
-    get_reviews(query="Restaurant", latitude=10.317, longitude=123.905, radius_miles=5)
+    result_data["title"] = business_title
+    result_data["place_id"] = place_id
+    result_data["data_id"] = data_id
+    result_data["address"] = place_data.get("address")
+    result_data["phone"] = place_data.get("phone")
+    result_data["website"] = place_data.get("website")
+    result_data["rating"] = place_data.get("rating")
+    result_data["reviews_count"] = place_data.get("reviews")
+    result_data["description"] = place_data.get("description")
 
-    print("\n" + "=" * 50 + "\n")
+    social_links = place_data.get("links", [])
+    if not social_links:
+        print("[Info] No GBP links found. Falling back to Google Knowledge Panel.")
+        social_links = _fetch_knowledge_graph_socials(query)
+    result_data["social_links"] = social_links
+
+    attributes_list = []
+    extensions_data = place_data.get("extensions", [])
+    if isinstance(extensions_data, list):
+        for item in extensions_data:
+            for attribute_group in item.values():
+                if isinstance(attribute_group, list):
+                    attributes_list.extend(attribute_group)
+
+    result_data["attributes"] = attributes_list
+
+    all_posts = _fetch_all_posts(data_id)
+    result_data["posts_count"] = len(all_posts)
+    result_data["most_recent_post_date"] = (
+        all_posts[0].get("date") if all_posts else None
+    )
+
+    all_photos = _fetch_all_photos(data_id)
+    result_data["photos"] = len(all_photos)
+
+    all_reviews = _fetch_all_reviews(place_id)
+
+    result_data["photo_counts_by_uploader"] = _get_photo_counts(
+        place_data, all_reviews, business_title
+    )
+
+    return analysis_result

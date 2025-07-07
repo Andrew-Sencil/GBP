@@ -35,19 +35,6 @@ def convert_relative_date_to_days(date_str):
     return float("inf")
 
 
-def analyze_photo_data(photos, business_title):
-    """Categorizes photos into owner-uploaded and customer-uploaded."""
-    owner_photo_count = 0
-    customer_photo_count = 0
-    for photo in photos:
-        user_data = photo.get("user")
-        if not user_data or user_data.get("name") == business_title:
-            owner_photo_count += 1
-        else:
-            customer_photo_count += 1
-    return owner_photo_count, customer_photo_count
-
-
 def count_customer_photos(user_reviews):
     """Counts the total number of images found within the user_reviews block."""
     if not user_reviews or "most_relevant" not in user_reviews:

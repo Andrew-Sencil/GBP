@@ -1,71 +1,8 @@
 # import csv
 import json
-import os
-from dotenv import load_dotenv
+from src.core.config import SERP_API_KEY
+from src.utils.parsing import analyze_photo_data, count_customer_photos
 from serpapi import GoogleSearch
-
-
-def convert_relative_date_to_days(date_str):
-    """
-    Converts a relative date string (e.g., "a week ago") into an estimated
-    number of days for sorting purposes.
-    """
-    if not isinstance(date_str, str):
-        return float("inf")
-
-    date_str = date_str.lower()
-    num = 0
-
-    if "now" in date_str or "moment" in date_str:
-        return 0
-
-    parts = date_str.split()
-    if parts[0] in ["a", "an"]:
-        num = 1
-    else:
-        try:
-            num = int(parts[0])
-        except (ValueError, IndexError):
-            return float("inf")
-
-    if "day" in date_str:
-        return num
-    elif "week" in date_str:
-        return num * 7
-    elif "month" in date_str:
-        return num * 30
-    elif "year" in date_str:
-        return num * 365
-    elif "hour" in date_str:
-        return num / 24
-
-    return float("inf")
-
-
-def analyze_photo_data(photos, business_title):
-    """Categorizes photos into owner-uploaded and customer-uploaded."""
-    owner_photo_count = 0
-    customer_photo_count = 0
-    for photo in photos:
-        user_data = photo.get("user")
-        if not user_data or user_data.get("name") == business_title:
-            owner_photo_count += 1
-        else:
-            customer_photo_count += 1
-    return owner_photo_count, customer_photo_count
-
-
-def count_customer_photos(user_reviews):
-    """Counts the total number of images found within the user_reviews block."""
-    if not user_reviews or "most_relevant" not in user_reviews:
-        return 0
-
-    total_customer_photos = 0
-    for review in user_reviews["most_relevant"]:
-        # Each review can have a list of images. Add the count of that list.
-        total_customer_photos += len(review.get("images", []))
-
-    return total_customer_photos
 
 
 def get_reviews(
@@ -85,9 +22,7 @@ def get_reviews(
          (only used with lat/lon).
     """
 
-    load_dotenv()
-
-    API_KEY = os.getenv("SERP_API_KEY")
+    API_KEY = SERP_API_KEY
 
     if not API_KEY:
         print("Error: SERP_API_KEY not foun. Make sure it's set in your .env file.")
@@ -412,81 +347,6 @@ def get_reviews(
         if "error" in search_results:
             print(f"API Error: {search_results['error']}")
         exit()
-
-    if target_data_id:
-        print("--- Step 2: Fetching reviews using engine 'google_maps_reviews' ---")
-
-        # all_reviews = []
-
-        # reviews_params = {
-        #     "engine": "google_maps_reviews",
-        #     "place_id": target_data_id,
-        #     "api_key": API_KEY,
-        # }
-
-        # page_num = 1
-        # while page_num <= 3:
-        #     reviews_search = GoogleSearch(reviews_params)
-        #     reviews_results = reviews_search.get_dict()
-
-        #     if "reviews" in reviews_results:
-        #         all_reviews.extend(reviews_results["reviews"])
-        #     else:
-        #         print("No reviews found on this page.")
-        #         break
-
-        #     if "next" not in reviews_results.get("serpapi_pagination", {}):
-        #         print("--- No more review pages. All reviews collected. ---")
-        #         break
-
-        #     reviews_params["next_page_token"] = reviews_results["serpapi_pagination"][
-        #         "next_page_token"
-        #     ]
-        #     page_num += 1
-
-        # if all_reviews:
-
-        #     sorted_reviews = sorted(
-        #         all_reviews,
-        #         key=lambda review: convert_relative_date_to_days(review.get("date")),
-        #     )
-
-        # for review in sorted_reviews[:10]:
-        # print(f"User:   {review.get('user', {}).get('name', 'N/A')}")
-        # print(f"Rating: {review.get('rating')} ★")
-        # print(f"Date:   {review.get('date')}")
-        # print("-" * 25)
-
-        # if sorted_reviews:
-        #     safe_filename = "".join(
-        #         c for c in business_title if c.isalnum() or c in (" ", "_")
-        #     ).rstrip()
-        #     output_filename = f"{safe_filename}_reviews_sorted.csv"
-
-        #     print(
-        #         f"--- Writing {len(sorted_reviews)} sorted reviews to {output_filename} ---"
-        #     )
-        #     with open(
-        #         output_filename, "w", newline="", encoding="utf-8"
-        #     ) as csvfile:
-        #         csv_writer = csv.writer(csvfile)
-        #         csv_writer.writerow(
-        #             ["User Name", "Rating", "Date", "Review Snippet"]
-        #         )
-
-        #         # We now loop through the NEW 'sorted_reviews' list
-        #         for review in sorted_reviews:
-        #             csv_writer.writerow(
-        #                 [
-        #                     review.get("user", {}).get("name", "N/A"),
-        #                     review.get("rating", "N/A"),
-        #                     review.get("date", "N/A"),
-        #                     review.get("snippet", "No snippet available"),
-        #                 ]
-        #             )
-        #     print(f"--- Success! Data saved to {output_filename} ---")
-        # else:
-        #     print("\n--- No reviews were found to save. ---")
 
 
 if __name__ == "__main__":

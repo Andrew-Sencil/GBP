@@ -2,6 +2,7 @@
 # import json
 from serpapi import GoogleSearch
 from src.core.config import SERP_API_KEY
+from src.utils.scoring import _star_rating_scoring, _fields_filled_scoring
 
 
 def _fetch_all_posts(data_id: str):
@@ -49,7 +50,7 @@ def _fetch_all_photos(data_id: str) -> list:
         "api_key": SERP_API_KEY,
     }
 
-    while True:
+    for _ in range(5):
         photos_results = GoogleSearch(photos_params).get_dict()
         photos = photos_results.get("photos", [])
         if not photos:
@@ -112,7 +113,7 @@ def _fetch_all_reviews(place_id: str) -> list:
     }
 
     print("[Info] Fetching all reviews to count every customer photo...")
-    while True:
+    for _ in range(5):
         reviews_results = GoogleSearch(reviews_params).get_dict()
         reviews = reviews_results.get("reviews", [])
         if not reviews:
@@ -225,6 +226,7 @@ def analyze_profile(query: str) -> dict:
     result_data["phone"] = place_data.get("phone")
     result_data["website"] = place_data.get("website")
     result_data["rating"] = place_data.get("rating")
+    print("Star Rating Score: ", _star_rating_scoring(result_data["rating"]))
     result_data["reviews_count"] = place_data.get("reviews")
     result_data["description"] = place_data.get("description")
 
@@ -243,6 +245,9 @@ def analyze_profile(query: str) -> dict:
                     attributes_list.extend(attribute_group)
 
     result_data["attributes"] = attributes_list
+
+    if result_data["description"] is not None:
+        print("All fields score: ", _fields_filled_scoring(len(result_data["attributes"])))
 
     all_posts = _fetch_all_posts(data_id)
     result_data["posts_count"] = len(all_posts)

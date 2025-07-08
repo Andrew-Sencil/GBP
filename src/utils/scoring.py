@@ -8,21 +8,10 @@ def _star_rating_scoring(star_rating: float):
     Returns:
         int: The score from 10 to 0.
     """
-    if star_rating == 5:
-        return 10
-    elif star_rating <= 4.9 and star_rating >= 4.0:
-        return 8
-    elif star_rating <= 3.9 and star_rating >= 3.0:
-        return 6
-    elif star_rating <= 2.9 and star_rating >= 2.0:
-        return 3
-    elif star_rating <= 1.9 and star_rating >= 1.0:
-        return 1
-    else:
-        return 0
+    return (star_rating / 5) * 10
 
 
-def _owner_images_scoring(owner_photo_count: int):
+def _owner_images_scoring(owner_photo_count: float):
     """
     Assigns a score based on the number of owner images from 0 to 10.
 
@@ -44,7 +33,7 @@ def _owner_images_scoring(owner_photo_count: int):
         return 0
 
 
-def _customer_images_scoring(customer_photo_count: int):
+def _customer_images_scoring(customer_photo_count: float):
     """
     Assigns a score based on the number of customer images from 0 to 10.
 
@@ -70,7 +59,7 @@ def _customer_images_scoring(customer_photo_count: int):
         return 0
 
 
-def _fields_filled_scoring(fields_filled: int):
+def _fields_filled_scoring(attributes: list, description: str):
     """
     Assigns a score based on the number of fields filled from 0 to 10.
 
@@ -80,13 +69,129 @@ def _fields_filled_scoring(fields_filled: int):
     Returns:
         int: The score from 10 to 0.
     """
+
+    description_score = 2 if description else 0
+
+    attribute_score = 0
+    fields_filled = len(attributes)
+
     if fields_filled >= 15:
-        return 10
+        attribute_score = 8
     elif fields_filled <= 14 and fields_filled >= 10:
-        return 8
+        attribute_score = 6
     elif fields_filled <= 9 and fields_filled >= 5:
-        return 5
+        attribute_score = 4
     elif fields_filled <= 4 and fields_filled >= 1:
+        attribute_score = 1
+    else:
+        attribute_score = 0
+
+    return description_score + attribute_score
+
+
+def _review_recency_scoring(date_reviewed: str):
+    """
+    Assigns a score based on the review recency from 0 to 10.
+
+    Args:
+        date_reviewed (str): The date of the review in '%Y-%m-%d' format.
+
+    Returns:
+        int: The score from 10 to 0.
+    """
+    if (
+        date_reviewed == "now"
+        or date_reviewed == "today"
+        or date_reviewed == "a week ago"
+    ):
+        return 10
+    elif date_reviewed == "2 weeks ago" or date_reviewed == "3 weeks ago":
+        return 8
+    elif date_reviewed == "4 weeks ago" or date_reviewed == "a month ago":
+        return 6
+    elif date_reviewed == "3 months ago" or date_reviewed == "6 months ago":
+        return 3
+    elif date_reviewed == "a year ago":
+        return 1
+    else:
+        return 0
+
+
+def _review_count_scoring(review_count: float):
+    """
+    Assigns a score based on the review count from 0 to 10.
+
+    Args:
+        review_count (int): The review count.
+
+    Returns:
+        int: The score from 10 to 0.
+    """
+    if review_count >= 250:
+        return 10
+    elif review_count <= 249 and review_count >= 100:
+        return 8
+    elif review_count <= 99 and review_count >= 50:
+        return 6
+    elif review_count <= 49 and review_count >= 10:
+        return 3
+    elif review_count <= 9 and review_count >= 1:
+        return 1
+    else:
+        return 0
+
+
+def _NAPW_completeness_scoring(name: str, address: str, phone: str, website: str):
+    """
+    Assigns a score based on the completeness of the NAPW from 0 to 10.
+
+    Args:
+        name (str): The name of the business.
+        address (str): The address of the business.
+        phone (str): The phone number of the business.
+        website (str): The website of the business.
+
+    Returns:
+        int: The score from 10 to 0.
+    """
+
+    items_to_check = [name, address, phone, website]
+    existing_items = [item for item in items_to_check if item]
+    special_sites = [".business.site", "facebook.com", "instagram.com", "linkedin.com"]
+
+    if len(existing_items) == 4:
+        return 10
+    elif any(site in website for site in special_sites):
+        return 8
+    elif len(existing_items) == 3:
+        return 6
+    elif len(existing_items) == 2:
+        return 3
+    elif len(existing_items) == 1:
+        return 1
+    else:
+        return 0
+
+
+def _google_post_scoring(date: str):
+    """
+    Assigns a score based on the post recency from 0 to 10.
+
+    Args:
+        date (str): The date of the post in '%Y-%m-%d' format.
+
+    Returns:
+        int: The score from 10 to 0.
+    """
+    if date == "a week ago" or date == "7 days ago" or date == "today" or date == "now":
+        return 10
+    elif date == "2 weeks ago" or date == "3 weeks ago" or date == "4 weeks ago":
+        return 8
+    elif date == "30 days ago" or date == "a month ago" or date == "2 months ago":
+        return 5
+    elif date == "3 months" or date == "4 months ago" or date == "5 months ago":
+        return 3
+    elif date == "6 months ago":
         return 1
     else:
         return 0

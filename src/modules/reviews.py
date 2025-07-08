@@ -1,267 +1,269 @@
-# import csv
-# import json
+import logging
+from dataclasses import dataclass, field
 from serpapi import GoogleSearch
-from src.core.config import SERP_API_KEY
-from src.utils.scoring import _star_rating_scoring, _fields_filled_scoring
+
+# --- Configuration ---
+# In a real app, this would come from a config file or environment variables
+SERP_API_KEY = "YOUR_SERP_API_KEY"
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
 
-def _fetch_all_posts(data_id: str):
+@dataclass
+class GmbProfileData:
+    """A container for all data fetched for a single GMB profile."""
+
+    business_title: str
+    place_data: dict = field(default_factory=dict)
+    all_photos: list = field(default_factory=list)
+    all_reviews: list = field(default_factory=list)
+    owner_photos_from_posts: list = field(default_factory=list)
+
+
+class GmbAnalyzer:
     """
-    Private helper to fetch all the post for a given data_id.
-    """
-    all_posts = []
-    if not data_id:
-        return all_posts
-
-    posts_params = {
-        "engine": "google_maps",
-        "data_id": data_id,
-        "api_key": SERP_API_KEY,
-    }
-
-    while True:
-        posts_results = GoogleSearch(posts_params).get_dict()
-        posts = posts_results.get("posts", [])
-        if not posts:
-            break
-        all_posts.extend(posts)
-
-        if "next" not in posts_results.get("serpapi_pagination", {}):
-            break
-        posts_params["next_page_token"] = posts_results["serpapi_pagination"][
-            "next_page_token"
-        ]
-
-    return all_posts
-
-
-def _fetch_all_photos(data_id: str) -> list:
-    """
-    Private helper to fetch all the photo URLs for a given data_id.
+    A class to encapsulate the logic for fetching and analyzing a Google Business Profile.
     """
 
-    all_photos = []
-    if not data_id:
-        return all_photos
+    def __init__(self, api_key: str):
+        if not api_key:
+            raise ValueError("SERP_API_KEY is required.")
+        self.api_key = api_key
+        # Safety limits to prevent excessive API usage
+        self.pagination_page_limit = 5
+        self.pagination_item_limit = 100
 
-    photos_params = {
-        "engine": "google_maps_photos",
-        "data_id": data_id,
-        "api_key": SERP_API_KEY,
-    }
+    def _paginate_results(self, params: dict, results_key: str) -> list:
+        """
+        Generic private helper to paginate through SerpApi results.
+        """
+        all_results = []
+        page_count = 0
 
-    for _ in range(5):
-        photos_results = GoogleSearch(photos_params).get_dict()
-        photos = photos_results.get("photos", [])
-        if not photos:
-            break
-        all_photos.extend(photos)
+        while True:
+            page_count += 1
+            if page_count > self.pagination_page_limit:
+                logging.warning(
+                    f"Reached page limit of {self.pagination_page_limit} for {params.get('engine')}"
+                )
+                break
 
-        if (
-            "next" not in photos_results.get("serpapi_pagination", {})
-            or len(all_photos) == 100
-        ):
-            break
-        photos_params["next_page_token"] = photos_results["serpapi_pagination"][
-            "next_page_token"
-        ]
+            search = GoogleSearch(params)
+            results = search.get_dict()
 
-        return all_photos
+            if "error" in results:
+                logging.error(
+                    f"API Error for {params.get('engine')}: {results['error']}"
+                )
+                break
 
+            page_items = results.get(results_key, [])
+            if not page_items:
+                break
 
-def _fetch_knowledge_graph_socials(query: str) -> list:
-    """
-    Performs a regular Google search to find the social profiles in the Knowledge Graph.
-    """
+            all_results.extend(page_items)
+            logging.info(
+                f"Fetched page {page_count}: {len(page_items)} {results_key}. Total: {len(all_results)}"
+            )
 
-    print("[Info] Checking Google Knowledge Panel for social links...")
-    params = {
-        "engine": "google",
-        "q": query,
-        "api_key": SERP_API_KEY,
-    }
-    search = GoogleSearch(params)
-    results = search.get_dict()
+            pagination = results.get("serpapi_pagination", {})
+            if (
+                "next" not in pagination
+                or len(all_results) >= self.pagination_item_limit
+            ):
+                break
 
-    knowledge_graph = results.get("knowledge_graph", {})
-    profiles = knowledge_graph.get("profiles", [])
+            params["next_page_token"] = pagination["next_page_token"]
 
-    standardized_profiles = []
-    for profile in profiles:
-        standardized_profiles.append(
-            {
-                "name": profile.get("name"),
-                "link": profile.get("link"),
-            }
+        return all_results
+
+    def fetch_all_posts(self, data_id: str, business_title: str) -> list:
+        if not data_id:
+            return []
+        params = {
+            "engine": "google_maps_posts",
+            "q": business_title,
+            "data_id": data_id,
+            "api_key": self.api_key,
+        }
+        return self._paginate_results(params, "posts")
+
+    def fetch_all_photos(self, data_id: str) -> list:
+        if not data_id:
+            return []
+        params = {
+            "engine": "google_maps_photos",
+            "data_id": data_id,
+            "api_key": self.api_key,
+        }
+        return self._paginate_results(params, "photos")
+
+    def fetch_all_reviews(self, place_id: str) -> list:
+        if not place_id:
+            return []
+        params = {
+            "engine": "google_maps_reviews",
+            "place_id": place_id,
+            "api_key": self.api_key,
+        }
+        return self._paginate_results(params, "reviews")
+
+    def _fetch_knowledge_graph_socials(self, query: str) -> list:
+        logging.info("Falling back to Google Knowledge Panel for social links...")
+        params = {
+            "engine": "google",
+            "q": query,
+            "api_key": self.api_key,
+        }
+        results = GoogleSearch(params).get_dict()
+        knowledge_graph = results.get("knowledge_graph", {})
+        profiles = knowledge_graph.get("profiles", [])
+        return [{"name": p.get("name"), "link": p.get("link")} for p in profiles]
+
+    def _get_photo_counts(
+        self,
+        profile_data: GmbProfileData,
+    ) -> dict:
+        """
+        Streamlined and efficient photo counting.
+        - Source of Truth for Customer Photos: Images attached to reviews.
+        - Source of Truth for Owner Photos: High-confidence signals in the main photos list.
+        """
+        logging.info("Starting advanced photo classification using Google Posts. . .")
+
+        distinct_owner_photo_urls = set()
+        distinct_customer_photo_urls = set()
+
+        if profile_data.place_data.get("thumbnail"):
+            distinct_owner_photo_urls.add(profile_data.place_data["thumbnail"])
+        for url in profile_data.owner_photos_from_posts:
+            if url:
+                distinct_owner_photo_urls.add(url)
+
+        logging.info(
+            f"Found {len(distinct_owner_photo_urls)} owner photos from high-confidence sources."
         )
 
-    return standardized_profiles
+        for photo in profile_data.all_photos:
+            photo_url = photo.get("image")
+            if not photo_url or photo_url in distinct_owner_photo_urls:
+                continue
 
+            photo_title = photo.get("title", "").lower()
+            photo_user_name = photo.get("user", {}).get("name", "")
 
-def _fetch_all_reviews(place_id: str) -> list:
-    """
-    Fetches all reviews for a given place_id by paginating.
-    """
-    all_reviews = []
-    if not place_id:
-        return all_reviews
+            is_owner_photo = (
+                photo_title == "by owner"
+                or photo_user_name == profile_data.business_title
+                or "owner" in photo_title
+            )
 
-    reviews_params = {
-        "engine": "google_maps_reviews",
-        "place_id": place_id,
-        "api_key": SERP_API_KEY,
-    }
+            if is_owner_photo:
+                distinct_owner_photo_urls.add(photo_url)
+            else:
+                distinct_customer_photo_urls.add(photo_url)
 
-    print("[Info] Fetching all reviews to count every customer photo...")
-    for _ in range(5):
-        reviews_results = GoogleSearch(reviews_params).get_dict()
-        reviews = reviews_results.get("reviews", [])
-        if not reviews:
-            break
-        all_reviews.extend(reviews)
+            for review in profile_data.all_reviews:
+                for img in review.get("images", []):
+                    if img and img not in distinct_owner_photo_urls:
+                        distinct_customer_photo_urls.add(img)
 
-        if (
-            "next" not in reviews_results.get("serpapi_pagination", {})
-            or len(all_reviews) == 100
-        ):
-            break
-        reviews_params["next_page_token"] = reviews_results["serpapi_pagination"][
-            "next_page_token"
-        ]
+            owner_count = len(distinct_owner_photo_urls)
+            customer_count = len(distinct_customer_photo_urls)
 
-    return all_reviews
+            logging.info(
+                f"Classification complete. Final distinct counts -> Owner: {owner_count}, Customer: {customer_count}"
+            )
+            return {
+                "distinct_owner_photo_count": owner_count,
+                "distinct_customer_photo_count": customer_count,
+            }
 
+    def analyze(self, query: str) -> dict:
+        """
+        Main analysis function. Returns structured data without printing.
+        """
+        logging.info(f"Starting analysis for query: '{query}'")
+        analysis_result = {"query": query, "success": False, "error": None, "data": {}}
 
-def _get_photo_counts(place_data: dict, all_reviews: list, business_title: str) -> dict:
-    """
-    Performs a continuous count of all identifiable owner and customer photos.
-    """
+        # Step 1: Initial search to get IDs
+        search_params = {
+            "engine": "google_maps",
+            "q": query,
+            "type": "search",
+            "api_key": self.api_key,
+        }
+        initial_results = GoogleSearch(search_params).get_dict()
 
-    owner_photo_count = 0
-    customer_photo_count = 0
+        if initial_results.get("error"):
+            analysis_result["error"] = initial_results["error"]
+            return analysis_result
 
-    if place_data.get("thumbnail"):
-        owner_photo_count += 1
+        first_result = (
+            initial_results.get("place_results")
+            or (initial_results.get("local_results", [])[0:1] or [None])[0]
+        )
+        if not first_result:
+            analysis_result["error"] = "No GBP found for this query."
+            return analysis_result
 
-    main_photos = place_data.get("photos", [])
-    for photo in main_photos:
-        if (
-            photo.get("title", "").lower() == "by owner"
-            or photo.get("user", {}).get("name") == business_title
-            or photo.get("user", {}).get("name") == "foodpanda"
-        ):
-            owner_photo_count += 1
+        place_id = first_result.get("place_id")
+        data_id = first_result.get("data_id")
+        business_title = first_result.get("title")
+        logging.info(f"Found business: '{business_title}' (Place ID: {place_id})")
 
-    for review in all_reviews:
-        customer_photo_count += len(review.get("images", []))
+        # Step 2: Get rich details using place_id for reliability
+        details_params = {
+            "engine": "google_maps",
+            "place_id": place_id,
+            "api_key": self.api_key,
+        }
+        details_results = GoogleSearch(details_params).get_dict()
+        place_data = details_results.get("place_results", {})
 
-    return {
-        "owner_photo_count": owner_photo_count,
-        "customer_photo_count": customer_photo_count,
-    }
+        if not place_data:
+            analysis_result["error"] = "Could not fetch detailed place data."
+            return analysis_result
 
+        # Step 3: Fetch all supplementary data
+        all_posts = self.fetch_all_posts(data_id, business_title)
+        all_photos = self.fetch_all_photos(data_id)
+        all_reviews = self.fetch_all_reviews(place_id)
+        owner_photos_from_posts = [post["image_url"] for post in all_posts if post.get("image_url")]
 
-def analyze_profile(query: str) -> dict:
-    """
-    Fetches and analyzes a Google Business Profile, returning a
-    dictionary of the findings.
-    This function does not print. It returns structured data.
-    """
+        profile_data = GmbProfileData(
+            business_title=business_title,
+            place_data=place_data,
+            all_photos=all_photos,
+            all_reviews=all_reviews,
+            owner_photos_from_posts=owner_photos_from_posts,
+        )
 
-    analysis_result = {
-        "query": query,
-        "success": False,
-        "error": None,
-        "data": {},
-    }
+        # Step 4: Assemble the final data structure
+        result_data = analysis_result["data"]
+        result_data["title"] = business_title
+        result_data["place_id"] = place_id
+        result_data["address"] = place_data.get("address")
+        result_data["phone"] = place_data.get("phone")
+        result_data["website"] = place_data.get("website")
+        result_data["rating"] = place_data.get("rating")
+        result_data["reviews_count"] = place_data.get("reviews")
 
-    search_params = {
-        "engine": "google_maps",
-        "q": query,
-        "type": "search",
-        "api_key": SERP_API_KEY,
-    }
-    initial_results = GoogleSearch(search_params).get_dict()
+        # Social links with fallback
+        social_links = place_data.get("links", [])
+        if not social_links:
+            social_links = self._fetch_knowledge_graph_socials(query)
+        result_data["social_links"] = social_links
 
-    first_result = None
-    if initial_results.get("error"):
-        analysis_result["error"] = initial_results["error"]
+        # Posts
+        result_data["posts_count"] = len(all_posts)
+        result_data["most_recent_post_date"] = (
+            all_posts[0].get("date") if all_posts else None
+        )
+
+        # Photos (Total and Classified)
+        result_data["total_photo_count"] = len(all_photos)
+        result_data["photo_counts_by_uploader"] = self._get_photo_counts(profile_data)
+        analysis_result["success"] = True
         return analysis_result
-
-    if "place_results" in initial_results:
-        first_result = initial_results["place_results"]
-    elif "local_results" in initial_results and initial_results["local_results"]:
-        first_result = initial_results["local_results"][0]
-    else:
-        analysis_result["error"] = "No GBP found for this query."
-        return analysis_result
-
-    place_id = first_result.get("place_id")
-    data_id = first_result.get("data_id")
-    business_title = first_result.get("title")
-
-    details_params = {
-        "engine": "google_maps",
-        "data_id": data_id,
-        "api_key": SERP_API_KEY,
-    }
-    details_results = GoogleSearch(details_params).get_dict()
-    place_data = details_results.get("place_results", {})
-
-    details_params = {
-        "engine": "google_maps",
-        "place_id": place_id,
-        "api_key": SERP_API_KEY,
-    }
-    details_results = GoogleSearch(details_params).get_dict()
-    place_data = details_results.get("place_results", {})
-
-    analysis_result["success"] = True
-    result_data = analysis_result["data"]
-
-    result_data["title"] = business_title
-    result_data["place_id"] = place_id
-    result_data["data_id"] = data_id
-    result_data["address"] = place_data.get("address")
-    result_data["phone"] = place_data.get("phone")
-    result_data["website"] = place_data.get("website")
-    result_data["rating"] = place_data.get("rating")
-    print("Star Rating Score: ", _star_rating_scoring(result_data["rating"]))
-    result_data["reviews_count"] = place_data.get("reviews")
-    result_data["description"] = place_data.get("description")
-
-    social_links = place_data.get("links", [])
-    if not social_links:
-        print("[Info] No GBP links found. Falling back to Google Knowledge Panel.")
-        social_links = _fetch_knowledge_graph_socials(query)
-    result_data["social_links"] = social_links
-
-    attributes_list = []
-    extensions_data = place_data.get("extensions", [])
-    if isinstance(extensions_data, list):
-        for item in extensions_data:
-            for attribute_group in item.values():
-                if isinstance(attribute_group, list):
-                    attributes_list.extend(attribute_group)
-
-    result_data["attributes"] = attributes_list
-
-    if result_data["description"] is not None:
-        print("All fields score: ", _fields_filled_scoring(len(result_data["attributes"])))
-
-    all_posts = _fetch_all_posts(data_id)
-    result_data["posts_count"] = len(all_posts)
-    result_data["most_recent_post_date"] = (
-        all_posts[0].get("date") if all_posts else None
-    )
-
-    all_photos = _fetch_all_photos(data_id)
-    result_data["photos"] = len(all_photos)
-
-    all_reviews = _fetch_all_reviews(place_id)
-
-    result_data["photo_counts_by_uploader"] = _get_photo_counts(
-        place_data, all_reviews, business_title
-    )
-
-    return analysis_result

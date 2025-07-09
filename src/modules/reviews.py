@@ -5,12 +5,8 @@ from serpapi import GoogleSearch
 from src.scrapers.photo_scraper import PhotoScraper
 from typing import List, Dict
 
-# --- Configuration ---
-# In a real app, this would come from a config file or environment variables
-# IMPORTANT: Remember to replace "YOUR_SERP_API_KEY" with your actual key.
 SERP_API_KEY = "YOUR_SERP_API_KEY"
 
-# Configure logging
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
 
@@ -26,8 +22,8 @@ class GmbAnalyzer:
             )
         self.api_key = api_key
         # Safety limits to prevent excessive API usage
-        self.pagination_page_limit = 5
-        self.pagination_item_limit = 100
+        self.pagination_page_limit = 10
+        self.pagination_item_limit = 200
         self.photo_scraper = PhotoScraper()
 
     def _paginate_results(self, params: dict, results_key: str) -> list:
@@ -85,6 +81,43 @@ class GmbAnalyzer:
         }
         return self._paginate_results(params, "posts")
 
+    def _filter_reviews_by_recency(self, all_reviews: List[Dict]) -> List[Dict]:
+        """
+        Filters a list of reviews to include only those within the last month.
+        Google's API returns human-readable dates, so we check for specific strings.
+        """
+        logging.info(
+            f"Filtering {len(all_reviews)} reviews to find those from the last month..."
+        )
+
+        print("--- DATES RECEIVED FROM API ---")
+        for review in all_reviews:
+            print(f"  -> {review.get('date')}") # This will show you everything you received
+        print("-------------------------------")
+
+        recent_reviews = []
+
+        VALID_MONTH_STRINGS = {
+            "now",
+            "today",
+            "a week ago",
+            "2 weeks ago",
+            "3 weeks ago",
+            "4 weeks ago",
+            "a month ago",
+        }
+
+        for review in all_reviews:
+            date_string = review.get("date", "").lower()
+            if not date_string:
+                continue
+
+            if date_string in VALID_MONTH_STRINGS or "day" in date_string:
+                recent_reviews.append(review)
+
+        logging.info(f"Found {len(recent_reviews)} reviews from the last month.")
+        return recent_reviews
+
     def fetch_all_photos(self, data_id: str) -> list:
         if not data_id:
             return []
@@ -102,6 +135,7 @@ class GmbAnalyzer:
             "engine": "google_maps_reviews",
             "place_id": place_id,
             "api_key": self.api_key,
+            "sort_by": "newestFirst"
         }
         return self._paginate_results(params, "reviews")
 
@@ -191,6 +225,9 @@ class GmbAnalyzer:
         business_title = place_data.get("title", business_title)
         logging.info(f"Using official business title for analysis: '{business_title}'")
 
+        all_reviews = self.fetch_all_reviews(place_id)
+        recent_reviews_filtered = self._filter_reviews_by_recency(all_reviews)
+
         all_posts = self.fetch_all_posts(data_id, business_title)
 
         search_url = f"https://www.google.com/maps/search/{query.replace(' ', '+')}"
@@ -214,6 +251,7 @@ class GmbAnalyzer:
             social_links = self._fetch_knowledge_graph_socials(query)
         result_data["social_links"] = social_links
 
+        result_data["recent_reviews_in_last_month"] = len(recent_reviews_filtered)
         # Posts
         result_data["posts_count"] = len(all_posts)
         result_data["most_recent_post_date"] = (

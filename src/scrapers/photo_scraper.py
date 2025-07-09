@@ -155,9 +155,9 @@ class PhotoScraper:
                 )
 
                 for i, thumbnail in enumerate(thumbnails):
-                    logging.info(
-                        f"Processing photo thumbnail {i+1}/{len(thumbnails)}..."
-                    )
+                    # logging.info(
+                    #     f"Processing photo thumbnail {i+1}/{len(thumbnails)}..."
+                    # )
                     try:
                         thumbnail.click()
                         page.wait_for_timeout(500)

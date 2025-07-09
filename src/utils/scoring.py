@@ -89,9 +89,9 @@ def _fields_filled_scoring(attributes: list, description: str):
     return description_score + attribute_score
 
 
-def _review_recency_scoring(date_reviewed: str):
+def _review_recency_scoring(total_review: int):
     """
-    Assigns a score based on the review recency from 0 to 10.
+    Assigns a score based on the review recency from 0 to 10 within the span of 1 month.
 
     Args:
         date_reviewed (str): The date of the review in '%Y-%m-%d' format.
@@ -99,20 +99,15 @@ def _review_recency_scoring(date_reviewed: str):
     Returns:
         int: The score from 10 to 0.
     """
-    if (
-        date_reviewed == "now"
-        or date_reviewed == "today"
-        or date_reviewed == "a week ago"
-    ):
+
+    if total_review >= 10:
         return 10
-    elif date_reviewed == "2 weeks ago" or date_reviewed == "3 weeks ago":
+    elif total_review <= 9 and total_review >= 7:
         return 8
-    elif date_reviewed == "4 weeks ago" or date_reviewed == "a month ago":
-        return 6
-    elif date_reviewed == "3 months ago" or date_reviewed == "6 months ago":
-        return 3
-    elif date_reviewed == "a year ago":
-        return 1
+    elif total_review <= 6 and total_review >= 4:
+        return 4
+    elif total_review <= 3 and total_review >= 1:
+        return 2
     else:
         return 0
 

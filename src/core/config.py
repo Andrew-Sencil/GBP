@@ -1,9 +1,24 @@
-import os
-from dotenv import load_dotenv
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-load_dotenv()
 
-SERP_API_KEY = os.getenv("SERP_API_KEY")
+class Config(BaseSettings):
+    """
+    Application settings, loaded from environment variables and the .env file.
+    This class defines the configuration needed for the GMB Analyzer service.
 
-if not SERP_API_KEY:
-    raise ValueError("SERP_API_KEY is not found. Make sure it's set in your .env file.")
+    Args:
+        BaseSettings: The base class for settings management from Pydantic.
+    """
+
+    SERP_API_KEY: str = Field(..., validation_alias="SERP_API_KEY")
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+
+config = Config()

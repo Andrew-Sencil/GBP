@@ -25,8 +25,8 @@ def calculate_score(business_data: dict) -> float:
     address = business_data.get("address")
     phone = business_data.get("phone")
     website = business_data.get("website")
-    google_post = business_data.get("most_recent_post_date")
-    review_recency = business_data.get("recent_reviews_in_last_month")
+    google_post = business_data.get("posts_count")
+    review_recency = business_data.get("recent_reviews_in_last_month_count")
 
     completeness_score = _fields_filled_scoring(attributes, description)
     NAPW_score = _NAPW_completeness_scoring(name, address, phone, website)

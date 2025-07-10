@@ -1,11 +1,8 @@
-# GMB_analysis.py
-
 import logging
+from src.core.config import config
 from serpapi import GoogleSearch
 from src.scrapers.photo_scraper import PhotoScraper
 from typing import List, Dict
-
-SERP_API_KEY = "YOUR_SERP_API_KEY"
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
@@ -16,7 +13,7 @@ class GmbAnalyzer:
     """
 
     def __init__(self, api_key: str):
-        if not api_key or api_key == "YOUR_SERP_API_KEY":
+        if not api_key:
             raise ValueError(
                 "SERP_API_KEY is required. Please replace the placeholder value."
             )
@@ -25,6 +22,25 @@ class GmbAnalyzer:
         self.pagination_page_limit = 10
         self.pagination_item_limit = 200
         self.photo_scraper = PhotoScraper()
+
+    def _fetch_posts_by_data_id(self, data_id: str, business_title: str) -> list:
+        """
+        Legacy method to fetch posts using the google_maps_posts engine.
+        Used as a final fallback.
+        """
+        if not data_id:
+            return []
+
+        logging.info(f"Attempting legacy post fetch using data_id: {data_id}")
+
+        params = {
+            "engine": "google_maps_posts",
+            "q": business_title,
+            "data_id": data_id,
+            "api_key": self.api_key,
+        }
+
+        return self._paginate_results(params, "posts")
 
     def _paginate_results(self, params: dict, results_key: str) -> list:
         """
@@ -70,17 +86,6 @@ class GmbAnalyzer:
 
         return all_results
 
-    def fetch_all_posts(self, data_id: str, business_title: str) -> list:
-        if not data_id:
-            return []
-        params = {
-            "engine": "google_maps_posts",
-            "q": business_title,
-            "data_id": data_id,
-            "api_key": self.api_key,
-        }
-        return self._paginate_results(params, "posts")
-
     def _filter_reviews_by_recency(self, all_reviews: List[Dict]) -> List[Dict]:
         """
         Filters a list of reviews to include only those within the last month.
@@ -92,7 +97,9 @@ class GmbAnalyzer:
 
         print("--- DATES RECEIVED FROM API ---")
         for review in all_reviews:
-            print(f"  -> {review.get('date')}") # This will show you everything you received
+            print(
+                f"  -> {review.get('date')}"
+            )  # This will show you everything you received
         print("-------------------------------")
 
         recent_reviews = []
@@ -135,7 +142,7 @@ class GmbAnalyzer:
             "engine": "google_maps_reviews",
             "place_id": place_id,
             "api_key": self.api_key,
-            "sort_by": "newestFirst"
+            "sort_by": "newestFirst",
         }
         return self._paginate_results(params, "reviews")
 
@@ -228,7 +235,40 @@ class GmbAnalyzer:
         all_reviews = self.fetch_all_reviews(place_id)
         recent_reviews_filtered = self._filter_reviews_by_recency(all_reviews)
 
-        all_posts = self.fetch_all_posts(data_id, business_title)
+        all_posts = []
+
+        # Tier 1: Check detailed results (modern method)
+        updates_from_details = place_data.get("updates", {})
+        if updates_from_details:
+            all_posts = updates_from_details.get("posts", [])
+
+        # Tier 2: Check initial results if Tier 1 fails
+        if not all_posts:
+            logging.warning(
+                "No posts in detailed results. Checking initial results as fallback."
+            )
+            updates_from_initial = first_result.get("updates", {})
+            if updates_from_initial:
+                all_posts = updates_from_initial.get("posts", [])
+
+        # Tier 3: Use legacy engine with data_id if Tiers 1 & 2 fail
+        if not all_posts and data_id:
+            logging.warning(
+                "No posts in 'updates' key. Trying legacy 'google_maps_posts' engine as final fallback."
+            )
+            all_posts = self._fetch_posts_by_data_id(data_id, business_title)
+
+        if all_posts:
+            logging.info(f"SUCCESS: Found {len(all_posts)} posts.")
+        else:
+            logging.warning("FAILURE: No posts found in any API locations.")
+
+        if all_posts:
+            logging.info(f"SUCCESS: Found {len(all_posts)} posts.")
+        else:
+            logging.warning(
+                "FAILURE: No posts were found in any of the checked API locations."
+            )
 
         search_url = f"https://www.google.com/maps/search/{query.replace(' ', '+')}"
         photo_attributions = self.photo_scraper.get_attributions_by_navigation(

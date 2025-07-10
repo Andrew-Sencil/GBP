@@ -168,7 +168,7 @@ def _NAPW_completeness_scoring(name: str, address: str, phone: str, website: str
         return 0
 
 
-def _google_post_scoring(date: str):
+def _google_post_scoring(update_count: int):
     """
     Assigns a score based on the post recency from 0 to 10.
 
@@ -178,15 +178,13 @@ def _google_post_scoring(date: str):
     Returns:
         int: The score from 10 to 0.
     """
-    if date == "a week ago" or date == "7 days ago" or date == "today" or date == "now":
+    if update_count >= 10:
         return 10
-    elif date == "2 weeks ago" or date == "3 weeks ago" or date == "4 weeks ago":
+    elif update_count <= 9 and update_count >= 7:
         return 8
-    elif date == "30 days ago" or date == "a month ago" or date == "2 months ago":
-        return 5
-    elif date == "3 months" or date == "4 months ago" or date == "5 months ago":
-        return 3
-    elif date == "6 months ago":
-        return 1
+    elif update_count <= 6 and update_count >= 4:
+        return 4
+    elif update_count <= 3 and update_count >= 1:
+        return 2
     else:
         return 0

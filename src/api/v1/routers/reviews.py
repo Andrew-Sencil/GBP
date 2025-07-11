@@ -291,7 +291,7 @@ class GmbAnalyzer:
             social_links = self._fetch_knowledge_graph_socials(query)
         result_data["social_links"] = social_links
 
-        result_data["recent_reviews_in_last_month"] = len(recent_reviews_filtered)
+        result_data["recent_reviews_in_last_month_count"] = len(recent_reviews_filtered)
         # Posts
         result_data["posts_count"] = len(all_posts)
         result_data["most_recent_post_date"] = (

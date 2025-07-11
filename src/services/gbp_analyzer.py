@@ -1,6 +1,6 @@
 import logging
 
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from serpapi import GoogleSearch
 from src.scrapers.uploader_scraper_process import run_photo_scraper_process
 from typing import List, Dict, Optional
@@ -158,6 +158,39 @@ class GBPAnalyzer:
             "customer_photo_count": customer_count,
         }
 
+    def _fetch_details_by_place_id(self, place_id: str) -> dict:
+
+        if not place_id:
+            return {}
+
+        details_params = {
+            "engine": "google_maps",
+            "place_id": place_id,
+            "api_key": self.api_key,
+        }
+
+        return details_params.get("place_results", {})
+
+    def _get_social_links(self, place_data: dict, query: str) -> list:
+
+        links = place_data.get("links", [])
+
+        if not links and query:
+            links = self._fetch_knowledge_graph_socials(query)
+
+        return links
+
+    def _run_photo_scraper(self, search_url: str, business_title: str) -> list:
+        with ProcessPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                run_photo_scraper_process, search_url, business_title
+            )
+            try:
+                return future.result(timeout=300)
+            except Exception as e:
+                logging.error(f"Photo scraping process failed: {e}")
+                return []
+
     def analyze(
         self, query: Optional[str] = None, place_id: Optional[str] = None
     ) -> dict:
@@ -226,39 +259,56 @@ class GBPAnalyzer:
         recent_reviews_filtered = self._filter_reviews_by_recency(all_reviews)
 
         all_posts = []
-
-        updates_from_details = place_data.get("updates", {})
-        if updates_from_details:
-            all_posts = updates_from_details.get("posts", [])
-
-        if not all_posts and initial_search_result:
-            updates_from_initial = initial_search_result.get("updates", {})
-            if updates_from_initial:
-                all_posts = updates_from_initial.get("posts", [])
-
-        if not all_posts and data_id:
-            all_posts = self._fetch_all_posts(data_id, business_title)
-
-        search_url = f"https://www.google.com/maps/search/{business_title.replace(' ', '+')}" # noqa
-
         photo_attributions = []
+        all_reviews = []
+        social_links = []
 
-        with ProcessPoolExecutor(max_workers=1) as executor:
+        # updates_from_details = place_data.get("updates", {})
+        # if updates_from_details:
+        #     all_posts = updates_from_details.get("posts", [])
 
-            future = executor.submit(
-                run_photo_scraper_process, search_url, business_title
+        # if not all_posts and initial_search_result:
+        #     updates_from_initial = initial_search_result.get("updates", {})
+        #     if updates_from_initial:
+        #         all_posts = updates_from_initial.get("posts", [])
+
+        # if not all_posts and data_id:
+        #     all_posts = self._fetch_all_posts(data_id, business_title)
+
+        search_url = f"https://www.google.com/maps/search/{business_title.replace(' ', '+')}"  # noqa
+
+        with (
+            ThreadPoolExecutor(max_workers=2) as api_executor,
+            ProcessPoolExecutor(max_workers=1) as scraper_executor,
+        ):
+
+            review_future = api_executor.submit(self._fetch_all_reviews, place_id)
+            social_future = api_executor.submit(
+                self._get_social_links, place_data, business_title
+            )
+            photo_future = scraper_executor.submit(
+                self._run_photo_scraper, search_url, business_title
             )
 
-            try:
-                photo_attributions = future.result(timeout=300)
-                logging.info("Photo scraping process finished successfully.")
-            except Exception as e:
-                logging.error(f"Photo scraping process failed: {e}")
-                photo_attributions = []
+            all_reviews = review_future.result()
+            social_links = social_future.result()
 
-        social_links = place_data.get("links", [])
-        if not social_links:
-            social_links = self._fetch_knowledge_graph_socials(query)
+            updates = place_data.get("updates", {})
+            if updates:
+                all_posts = updates.get("posts", [])
+
+            if not all_posts and initial_search_result:
+                updates_from_initial = initial_search_result.get("updates", {})
+                if updates_from_initial:
+                    all_posts = updates_from_initial.get("posts", [])
+            if not all_posts and data_id:
+                all_posts = self._fetch_all_posts(data_id, business_title)
+
+            photo_attributions = photo_future.result()
+
+        # social_links = place_data.get("links", [])
+        # if not social_links and business_title:
+        #     social_links = self._fetch_knowledge_graph_socials(business_title)
 
         result_data = {
             "title": business_title,

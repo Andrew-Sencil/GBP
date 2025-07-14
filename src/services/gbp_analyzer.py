@@ -7,7 +7,7 @@ from concurrent.futures import (
 )
 from serpapi import GoogleSearch
 from src.scrapers.uploader_scraper_process import run_photo_scraper_process
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
@@ -54,7 +54,7 @@ class GBPAnalyzer:
             page_count += 1
             if page_count > self.pagination_page_limit:
                 logging.warning(
-                    f"Reached page limit of {self.pagination_page_limit} for {params.get('engine')}"
+                    f"Reached page limit of {self.pagination_page_limit} for {params.get('engine')}" # noqa
                 )
                 break
 
@@ -71,7 +71,7 @@ class GBPAnalyzer:
 
             all_results.extend(page_items)
             logging.info(
-                f"Retrieved {len(page_items)} items from page {page_count} for {params.get('engine')}"
+                f"Retrieved {len(page_items)} items from page {page_count} for {params.get('engine')}" # noqa
             )
 
             pagination = results.get("serpapi_pagination", {})
@@ -238,7 +238,7 @@ class GBPAnalyzer:
                     customer_count += 1  # Default to customer if unclear
 
             logging.info(
-                f"Final Tally (from Playwright): Owner: {owner_count}, Customer: {customer_count}"
+                f"Final Tally (from Playwright): Owner: {owner_count}, Customer: {customer_count}" # noqa
             )
 
             return {
@@ -353,7 +353,7 @@ class GBPAnalyzer:
                 if not query:
                     return {
                         "success": False,
-                        "error": "Internal Error: Either query or place_id must be provided.",
+                        "error": "Internal Error: Either query or place_id must be provided.", # noqa
                     }
 
                 try:
@@ -412,7 +412,7 @@ class GBPAnalyzer:
                 if not place_data:
                     return {
                         "success": False,
-                        "error": f"Could not fetch detailed data for place_id: {current_place_id}",
+                        "error": f"Could not fetch detailed data for place_id: {current_place_id}", # noqa
                     }
             except Exception as e:
                 logging.error(f"Error fetching place details: {e}")

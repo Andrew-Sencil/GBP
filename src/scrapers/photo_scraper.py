@@ -13,8 +13,9 @@ import re
 
 class PhotoScraper:
     """
-    ENHANCED VERSION: Adds robust error handling, proper timeouts, and graceful degradation
-    to prevent the scraper from crashing on problematic photos.
+    ENHANCED VERSION: Adds robust error handling, proper timeouts,
+    and graceful degradation to prevent the scraper from crashing
+    on problematic photos.
     """
 
     def __init__(self, check_limit: int = 100):
@@ -120,13 +121,13 @@ class PhotoScraper:
             else:
                 # No uploader container found - likely an owner photo
                 logging.info(
-                    f"   ---> Photo {photo_index + 1}: No uploader container - assuming Owner"
+                    f"   ---> Photo {photo_index + 1}: No uploader container - assuming Owner" # noqa
                 )
                 return {"uploader": "Owner"}
 
         except PlaywrightTimeoutError:
             logging.warning(
-                f"   ---> Photo {photo_index + 1}: Timeout during processing - assuming Owner"
+                f"   ---> Photo {photo_index + 1}: Timeout during processing - assuming Owner" # noqa
             )
             return {"uploader": "Owner"}
         except Exception as e:
@@ -150,7 +151,7 @@ class PhotoScraper:
                     args=["--disable-blink-features=AutomationControlled"],
                 )
                 context = browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", # noqa
                     viewport={"width": 1920, "height": 1080},
                     locale="en-US",
                 )
@@ -212,7 +213,7 @@ class PhotoScraper:
 
                 # Collect thumbnails with scrolling
                 logging.info(
-                    "SUCCESS! Photo gallery is loaded. Collecting thumbnails with mouse-wheel scrolling..."
+                    "SUCCESS! Photo gallery is loaded. Collecting thumbnails with mouse-wheel scrolling..." # noqa
                 )
                 thumbnails = []
                 previous_count = 0
@@ -227,13 +228,13 @@ class PhotoScraper:
 
                         if len(thumbnails) == previous_count and scroll_attempts > 0:
                             logging.info(
-                                "No new thumbnails loaded after scroll. Collection complete."
+                                "No new thumbnails loaded after scroll. Collection complete." # noqa
                             )
                             break
 
                         previous_count = len(thumbnails)
                         logging.info(
-                            f"Collected {len(thumbnails)} unique thumbnails. Scrolling down..."
+                            f"Collected {len(thumbnails)} unique thumbnails. Scrolling down..." # noqa
                         )
 
                         page.mouse.wheel(0, 10000)
@@ -258,7 +259,7 @@ class PhotoScraper:
                         attributions.append({"uploader": "Error"})
 
                 logging.info(
-                    f"Photo scraping completed successfully. Processed {len(attributions)} photos."
+                    f"Photo scraping completed successfully. Processed {len(attributions)} photos." # noqa
                 )
 
             except Exception as e:

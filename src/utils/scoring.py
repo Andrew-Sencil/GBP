@@ -156,7 +156,7 @@ def _NAPW_completeness_scoring(name: str, address: str, phone: str, website: str
 
     if len(existing_items) == 4:
         return 10
-    elif any(site in website for site in special_sites):
+    elif website and any(site in website for site in special_sites):
         return 8
     elif len(existing_items) == 3:
         return 6

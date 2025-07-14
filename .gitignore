@@ -1,6 +1,6 @@
 .env
-.csv
-.txt
-.png
+*.csv
+*.txt
+*.png
 
 __pycache__

@@ -20,7 +20,7 @@ class Config(BaseSettings):
         case_sensitive=False,
     )
 
-    APP_HOST: str = Field("localhost", validation_alias="APP_HOST")
+    APP_HOST: str = Field("0.0.0.0", validation_alias="APP_HOST")
 
     APP_PORT: int = Field(8000, validation_alias="APP_PORT")
 

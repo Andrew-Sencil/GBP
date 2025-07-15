@@ -54,7 +54,7 @@ class GBPAnalyzer:
             page_count += 1
             if page_count > self.pagination_page_limit:
                 logging.warning(
-                    f"Reached page limit of {self.pagination_page_limit} for {params.get('engine')}" # noqa
+                    f"Reached page limit of {self.pagination_page_limit} for {params.get('engine')}"  # noqa
                 )
                 break
 
@@ -71,7 +71,7 @@ class GBPAnalyzer:
 
             all_results.extend(page_items)
             logging.info(
-                f"Retrieved {len(page_items)} items from page {page_count} for {params.get('engine')}" # noqa
+                f"Retrieved {len(page_items)} items from page {page_count} for {params.get('engine')}"  # noqa
             )
 
             pagination = results.get("serpapi_pagination", {})
@@ -238,7 +238,7 @@ class GBPAnalyzer:
                     customer_count += 1  # Default to customer if unclear
 
             logging.info(
-                f"Final Tally (from Playwright): Owner: {owner_count}, Customer: {customer_count}" # noqa
+                f"Final Tally (from Playwright): Owner: {owner_count}, Customer: {customer_count}"  # noqa
             )
 
             return {
@@ -353,7 +353,7 @@ class GBPAnalyzer:
                 if not query:
                     return {
                         "success": False,
-                        "error": "Internal Error: Either query or place_id must be provided.", # noqa
+                        "error": "Internal Error: Either query or place_id must be provided.",  # noqa
                     }
 
                 try:
@@ -412,7 +412,7 @@ class GBPAnalyzer:
                 if not place_data:
                     return {
                         "success": False,
-                        "error": f"Could not fetch detailed data for place_id: {current_place_id}", # noqa
+                        "error": f"Could not fetch detailed data for place_id: {current_place_id}",  # noqa
                     }
             except Exception as e:
                 logging.error(f"Error fetching place details: {e}")
@@ -565,6 +565,158 @@ class GBPAnalyzer:
                 )
             except Exception as e:
                 logging.error(f"Error processing photo counts: {e}")
+
+            return {
+                "success": True,
+                "data": result_data,
+            }
+
+        except Exception as e:
+            logging.error(f"Critical error in analyze method: {e}")
+            logging.error(f"Traceback: {traceback.format_exc()}")
+            return {
+                "success": False,
+                "error": f"Analysis failed: {str(e)}",
+                "data": default_result["data"],
+            }
+
+    def website_socials(
+        self, query: Optional[str] = None, place_id: Optional[str] = None
+    ) -> dict:
+        """
+        Enhanced analysis with comprehensive error handling and safe defaults.
+        """
+        # Initialize default result structure
+        default_result = {
+            "success": False,
+            "data": {
+                "website": None,
+                "social_links": [],
+            },
+        }
+
+        try:
+            current_place_id = place_id
+            initial_search_result = None
+
+            # Handle place_id resolution
+            if not current_place_id:
+                if not query:
+                    return {
+                        "success": False,
+                        "error": "Internal Error: Either query or place_id must be provided.",  # noqa
+                    }
+
+                try:
+                    search_params = {
+                        "engine": "google_maps",
+                        "q": query,
+                        "type": "search",
+                        "api_key": self.api_key,
+                    }
+
+                    initial_results = self._safe_api_call(
+                        search_params, "initial search"
+                    )
+                    if not initial_results:
+                        return {
+                            "success": False,
+                            "error": f"No results found for query: '{query}'",
+                        }
+
+                    initial_search_result = (
+                        initial_results.get("place_results")
+                        or (initial_results.get("local_results", [])[0:1] or [None])[0]
+                    )
+
+                    if not initial_search_result:
+                        return {
+                            "success": False,
+                            "error": f"No GBP found for query: '{query}'",
+                        }
+
+                    current_place_id = initial_search_result.get("place_id")
+                    if not current_place_id:
+                        return {
+                            "success": False,
+                            "error": "Could not extract place_id from search results.",
+                        }
+                except Exception as e:
+                    logging.error(f"Error during initial search: {e}")
+                    return {"success": False, "error": f"Search failed: {str(e)}"}
+
+            else:
+                logging.info(
+                    f"Analyzing directly with provided place_id: '{current_place_id}'"
+                )
+
+            # Fetch detailed place data
+            try:
+                details_params = {
+                    "engine": "google_maps",
+                    "place_id": current_place_id,
+                    "api_key": self.api_key,
+                }
+                details_results = self._safe_api_call(details_params, "place details")
+                place_data = details_results.get("place_results", {})
+
+                if not place_data:
+                    return {
+                        "success": False,
+                        "error": f"Could not fetch detailed data for place_id: {current_place_id}",  # noqa
+                    }
+            except Exception as e:
+                logging.error(f"Error fetching place details: {e}")
+                return {
+                    "success": False,
+                    "error": f"Failed to fetch place details: {str(e)}",
+                }
+
+            # Extract basic info with safe defaults
+            data_id = self._safe_get_nested_value(place_data, "data_id") or (
+                self._safe_get_nested_value(initial_search_result, "data_id")
+                if initial_search_result
+                else None
+            )
+            business_title = self._safe_get_nested_value(
+                place_data, "title", "Unknown Business"
+            )
+
+            # Initialize result data with safe values
+            result_data = {
+                "website": self._safe_get_nested_value(place_data, "website"),
+                "social_links": [],
+            }
+
+            # Execute concurrent operations with error handling
+            social_links = []
+
+            try:
+                with (ThreadPoolExecutor(max_workers=2) as api_executor,):
+                    # Submit all futures
+                    futures = {}
+
+                    try:
+                        futures["social"] = api_executor.submit(
+                            self._get_social_links, place_data, business_title
+                        )
+                    except Exception as e:
+                        logging.error(f"Error submitting social links task: {e}")
+
+                    if "social" in futures:
+                        try:
+                            social_links = futures["social"].result(timeout=30)
+                        except Exception as e:
+                            logging.error(f"Social links collection failed: {e}")
+                            social_links = []
+
+            except Exception as e:
+                logging.error(f"Error during concurrent operations: {e}")
+
+            try:
+                result_data["social_links"] = social_links if social_links else []
+            except Exception as e:
+                logging.error(f"Error setting social links: {e}")
 
             return {
                 "success": True,

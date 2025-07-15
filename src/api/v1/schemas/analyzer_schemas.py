@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field, model_validator
-from typing import Dict, Any, Optional
+from pydantic import BaseModel, Field, model_validator, HttpUrl
+from typing import Dict, Any, Optional, List
 
 
 class AnalysisRequest(BaseModel):
@@ -29,6 +29,16 @@ class AnalysisRequest(BaseModel):
             raise ValueError("You must provide exactly one of 'query' or 'place_id'.")
 
         return values
+
+
+class WebsiteSocialsData(BaseModel):
+    website: Optional[HttpUrl] = None
+    social_links: List[Dict[str, str]] = []
+
+
+class WebsiteSocialsResponse(BaseModel):
+    success: bool
+    data: WebsiteSocialsData
 
 
 class AnalysisResponse(BaseModel):

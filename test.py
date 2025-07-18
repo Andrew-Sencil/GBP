@@ -1,6 +1,8 @@
 import argparse
-import json
-from src.modules.reviews import analyze_profile
+from pprint import pprint
+from src.api.v1.routers.reviews import GmbAnalyzer
+from src.utils.computation import calculate_score
+from src.core.config import config
 
 
 def main():
@@ -17,15 +19,29 @@ def main():
         help="The business search query. \nExample: 'Art Institute of Chicago' or 'Pilsen Yards, 60608'",  # noqa
     )
 
+    analyzer = GmbAnalyzer(api_key=config.SERP_API_KEY)
+
     args = parser.parse_args()
 
     print(f"--- Analyzing GBP profile for: '{args.query}' ---\n")
 
-    result = analyze_profile(query=args.query)
+    result = analyzer.analyze(query=args.query)
 
     print("--- Analysis Complete ---")
 
-    print(json.dumps(result, indent=2))
+    if result["success"]:
+        business_data = result["data"]
+
+        print("\n--- Raw Data Analysis ---")
+        pprint(business_data)
+
+        score = calculate_score(business_data)
+
+        print("\n--- Final Score ---")
+        print("Business Health Score: ", score)
+    else:
+        print("\n--- Analysis Failed ---")
+        print(f"Error: {result['error']}")
 
 
 if __name__ == "__main__":

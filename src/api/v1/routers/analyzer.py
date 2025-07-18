@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 
 from src.services.gbp_analyzer import GBPAnalyzer
 from src.core.config import config
@@ -26,9 +26,16 @@ def analyze_business(request: AnalysisRequest):
         raise HTTPException(status_code=503, detail=f"Service Unavailable: {e}")
 
     logging.info(
-        f"Received API request. Query: '{request.query}', Place ID: '{request.place_id}'"
+        f"Received API request. Query: '{request.business_name}', Place ID: '{request.place_id}'" # noqa
     )
-    result = analyser.analyze(query=request.query, place_id=request.place_id)
+    result = analyser.analyze(
+        query=request.business_name,
+        place_id=request.place_id,
+        user_provided_address=request.address,
+        user_provided_rating=request.star_rating,
+        user_provided_reviews=request.review_count,
+        user_provided_phone=request.phone_number,
+    )
 
     if not result.get("success"):
         error_message = result.get("error", "An unknown error occurred.")

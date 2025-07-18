@@ -1,4 +1,5 @@
 # src/scrapers/photo_scraper.py
+# To be fixed
 
 import logging
 from typing import List, Dict, Optional

@@ -73,7 +73,7 @@ def _fields_filled_scoring(attributes: list, description: str):
     description_score = 2 if description else 0
 
     attribute_score = 0
-    fields_filled = len(attributes)
+    fields_filled = attributes
 
     if fields_filled >= 15:
         attribute_score = 8
@@ -100,14 +100,16 @@ def _review_recency_scoring(total_review: int):
         int: The score from 10 to 0.
     """
 
-    if total_review >= 10:
+    if total_review >= 5:
         return 10
-    elif total_review <= 9 and total_review >= 7:
+    elif total_review == 4:
         return 8
-    elif total_review <= 6 and total_review >= 4:
+    elif total_review == 3:
         return 4
-    elif total_review <= 3 and total_review >= 1:
+    elif total_review == 2:
         return 2
+    elif total_review == 1:
+        return 1
     else:
         return 0
 
@@ -178,13 +180,13 @@ def _google_post_scoring(update_count: int):
     Returns:
         int: The score from 10 to 0.
     """
-    if update_count >= 10:
+    if update_count >= 4:
         return 10
-    elif update_count <= 9 and update_count >= 7:
-        return 8
-    elif update_count <= 6 and update_count >= 4:
-        return 4
-    elif update_count <= 3 and update_count >= 1:
+    elif update_count == 3:
+        return 7
+    elif update_count == 2:
+        return 5
+    elif update_count == 1:
         return 2
     else:
         return 0

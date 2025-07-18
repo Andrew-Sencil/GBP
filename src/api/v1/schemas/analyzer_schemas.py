@@ -8,7 +8,7 @@ class AnalysisRequest(BaseModel):
     A user must provide EITHER a query OR a place_id.
     """
 
-    query: Optional[str] = Field(
+    business_name: Optional[str] = Field(
         None,
         min_length=3,
         description="Fuzzy search query (e.g., 'Pilsen Yards, Chicago'). Use this if you don't know the place_id.",  # noqa
@@ -20,13 +20,34 @@ class AnalysisRequest(BaseModel):
         description="The specific Google Place ID (e.g., 'ChIJJW8vOWAtDogRA0JukJqeJeI'). This is faster and more accurate.",  # noqa
         example="ChIJJW8vOWAtDogRA0JukJqeJeI",
     )
+    address: Optional[str] = Field(
+        None,
+        description="The expected address of the business (e.g., '123 Main St, Anytown, USA').",  # noqa
+        example="1163 W 18th St, Chicago, IL 60608",
+    )
+    star_rating: Optional[float] = Field(
+        None,
+        description="The expected star rating of the business (e.g., 4.2).",
+        example=4.4,
+    )
+    review_count: Optional[int] = Field(
+        None,
+        description="The expected review count of the business (e.g., 100).",
+        example=774,
+    )
+    phone_number: Optional[str] = Field(
+        None,
+        description="The expected phone number of the business (e.g., '+1-555-555-5555').",  # noqa
+        example="+1 312-243-2410",
+    )
 
     @model_validator(mode="before")
     def check_exactly_one_field_is_provided(cls, values):
         """Ensures that either 'query' or 'place_id' is provided, but not both."""
-        query, place_id = values.get("query"), values.get("place_id")
-        if (query and place_id) or (not query and not place_id):
-            raise ValueError("You must provide exactly one of 'query' or 'place_id'.")
+        if not values.get("business_name") and not values.get("place_id"):
+            raise ValueError(
+                "You must provide at least one of 'business_name' or 'place_id'."
+            )
 
         return values
 

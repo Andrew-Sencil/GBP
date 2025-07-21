@@ -26,7 +26,7 @@ def analyze_business(request: AnalysisRequest):
         raise HTTPException(status_code=503, detail=f"Service Unavailable: {e}")
 
     logging.info(
-        f"Received API request. Query: '{request.business_name}', Place ID: '{request.place_id}'" # noqa
+        f"Received API request. Query: '{request.business_name}', Place ID: '{request.place_id}'"  # noqa
     )
     result = analyser.analyze(
         query=request.business_name,

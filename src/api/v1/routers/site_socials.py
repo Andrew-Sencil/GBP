@@ -28,7 +28,7 @@ def web_socials(request: AnalysisRequest):
     # --- THE FIX IS HERE ---
     # Changed 'request.query' to 'request.business_name' to match the schema.
     logging.info(
-        f"Received API request for socials. Query: '{request.business_name}', Place ID: '{request.place_id}'" # noqa
+        f"Received API request for socials. Query: '{request.business_name}', Place ID: '{request.place_id}'"  # noqa
     )
 
     # And also fixed it here when calling the service.

@@ -1,5 +1,11 @@
 from pydantic import BaseModel, Field, model_validator, HttpUrl
 from typing import Dict, Any, Optional, List
+from enum import Enum
+
+
+class ModelChoice(str, Enum):
+    FLASH = "flash"
+    PRO = "pro"
 
 
 class AnalysisRequest(BaseModel):
@@ -52,6 +58,16 @@ class AnalysisRequest(BaseModel):
         return values
 
 
+class AnalysisResponse(BaseModel):
+    """
+    The successful response model for the /analyze endpoint.
+    It contains the final score and the detailed raw data.
+    """
+
+    score: float
+    data: Dict[str, Any]
+
+
 class WebsiteSocialsData(BaseModel):
     website: Optional[HttpUrl] = None
     social_links: List[Dict[str, str]] = []
@@ -62,11 +78,20 @@ class WebsiteSocialsResponse(BaseModel):
     data: WebsiteSocialsData
 
 
-class AnalysisResponse(BaseModel):
-    """
-    The successful response model for the /analyze endpoint.
-    It contains the final score and the detailed raw data.
-    """
+class DetailedAnalysisRequest(BaseModel):
+    """The request body for the new /detailed-analysis endpoint."""
 
-    score: str
-    data: Dict[str, Any]
+    score: str = Field(description="The numerical score from the initial analysis.")
+    data: Dict[str, Any] = Field(
+        description="The data object from the initial analysis."
+    )
+    model_choice: ModelChoice = Field(
+        default=ModelChoice.FLASH,
+        description="Choose the LLM to use for the detailed analysis.",
+    )
+
+
+class DetailedAnalysisResponse(BaseModel):
+    """The response body for the new /detailed-analysis endpoint."""
+
+    detailed_analysis: str

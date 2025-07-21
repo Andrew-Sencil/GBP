@@ -184,7 +184,7 @@ class GBPAnalyzer:
                 if not query:
                     return {
                         "success": False,
-                        "error": "Internal Error: Either query or place_id must be provided.", # noqa
+                        "error": "Internal Error: Either query or place_id must be provided.",  # noqa
                     }
 
                 search_params = {
@@ -227,7 +227,7 @@ class GBPAnalyzer:
             if not place_data:
                 return {
                     "success": False,
-                    "error": f"Could not fetch detailed data for place_id: {current_place_id}", # noqa
+                    "error": f"Could not fetch detailed data for place_id: {current_place_id}",  # noqa
                 }
 
             business_title = _safe_get_nested_value(

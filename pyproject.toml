@@ -1,32 +1,29 @@
-[project]
+[tool.poetry]
 name = "src"
 version = "0.1.0"
 description = ""
-authors = [
-    {name = "Wintoo12",email = "sencilmarkandrew12@gmail.com"}
-]
+authors = ["Wintoo12 <sencilmarkandrew12@gmail.com>"]
 readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "google-search-results (>=2.4.2,<3.0.0)",
-    "dotenv (>=0.9.9,<0.10.0)",
-    "python-dotenv (>=1.1.1,<2.0.0)",
-    "requests (>=2.32.4,<3.0.0)",
-    "beautifulsoup4 (>=4.13.4,<5.0.0)",
-    "playwright (>=1.53.0,<2.0.0)",
-    "fastapi (>=0.116.0,<0.117.0)",
-    "uvicorn[standard] (>=0.35.0,<0.36.0)",
-    "pydantic-settings (>=2.10.1,<3.0.0)",
-    "pydantic (>=2.11.7,<3.0.0)",
-    "black (>=25.1.0,<26.0.0)"
-]
+packages = [{include = "src"}] # Important: Tell Poetry where your package is
 
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
-
+[tool.poetry.dependencies]
+python = ">=3.12"
+google-search-results = ">=2.4.2,<3.0.0"
+python-dotenv = ">=1.1.1,<2.0.0"
+requests = ">=2.32.4,<3.0.0"
+beautifulsoup4 = ">=4.13.4,<5.0.0"
+playwright = ">=1.53.0,<2.0.0"
+fastapi = ">=0.116.0,<0.117.0"
+uvicorn = {extras = ["standard"], version = ">=0.35.0,<0.36.0"}
+pydantic-settings = ">=2.10.1,<3.0.0"
+pydantic = ">=2.11.7,<3.0.0"
+black = ">=25.1.0,<26.0.0"
+google-generativeai = ">=0.8.5,<0.9.0"
 
 [tool.poetry.scripts]
 start = "src.run:start"
 test = "pytest:main"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

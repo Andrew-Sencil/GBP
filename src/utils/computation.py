@@ -71,6 +71,8 @@ def calculate_score(business_data: dict) -> float:
         + weighted_napw_score
     )
 
-    safe_score = round(business_score, 4)
+    safe_score = round(business_score, 1)
 
-    return f"{safe_score:.1f}"
+    print("safe_score: ", safe_score)
+
+    return safe_score

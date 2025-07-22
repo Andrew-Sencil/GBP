@@ -1,3 +1,4 @@
+import os
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -12,6 +13,16 @@ class Config(BaseSettings):
     """
 
     SERP_API_KEY: str = Field(..., validation_alias="SERP_API_KEY")
+    GEMINI_API_KEY: str = Field(..., validation_alias="GEMINI_API_KEY")
+    GEMINI_MODEL_FLASH: str = Field(
+        "gemini-2.5-flash", validate_alias="GEMINI_MODEL_FLASH"
+    )
+    GEMINI_MODEL_PRO: str = Field("gemini-2.5-pro", validate_alias="GEMINI_MODEL_PRO")
+
+    GBP_ANALYSIS_PROMPT_PATH: str = Field(
+        os.path.join("assets", "pre-prompt.txt"),
+        validate_alias="GBP_ANALYSIS_PROMPT_PATH",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

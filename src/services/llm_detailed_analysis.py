@@ -44,7 +44,9 @@ except Exception as e:
     logging.error(f"Error configuring Generative AI: {e}")
 
 
-def get_llm_analysis(business_data: dict, score: str, model_choice: ModelChoice) -> str:
+def get_llm_analysis(
+    business_data: dict, score: float, model_choice: ModelChoice
+) -> str:
     """
     Takes structured data, sends it to the chosen Google Gemini model using a
     file-based prompt template, and returns a detailed analysis.

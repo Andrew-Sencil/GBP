@@ -46,6 +46,10 @@ class AnalysisRequest(BaseModel):
         description="The expected phone number of the business (e.g., '+1-555-555-5555').",  # noqa
         example="+1 312-243-2410",
     )
+    model_choice: ModelChoice = Field(
+        default=ModelChoice.FLASH,
+        description="Choose the LLM to use for the detailed analysis.",
+    )
 
     @model_validator(mode="before")
     def check_exactly_one_field_is_provided(cls, values):
@@ -66,6 +70,7 @@ class AnalysisResponse(BaseModel):
 
     score: float
     data: Dict[str, Any]
+    detailed_analysis: str
 
 
 class WebsiteSocialsData(BaseModel):
@@ -81,13 +86,9 @@ class WebsiteSocialsResponse(BaseModel):
 class DetailedAnalysisRequest(BaseModel):
     """The request body for the new /detailed-analysis endpoint."""
 
-    score: str = Field(description="The numerical score from the initial analysis.")
+    score: float = Field(description="The numerical score from the initial analysis.")
     data: Dict[str, Any] = Field(
         description="The data object from the initial analysis."
-    )
-    model_choice: ModelChoice = Field(
-        default=ModelChoice.FLASH,
-        description="Choose the LLM to use for the detailed analysis.",
     )
 
 

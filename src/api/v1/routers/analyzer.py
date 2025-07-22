@@ -5,6 +5,7 @@ from src.services.gbp_analyzer import GBPAnalyzer
 from src.core.config import config
 from src.api.v1.schemas.analyzer_schemas import AnalysisResponse, AnalysisRequest
 from src.utils.computation import calculate_score
+from src.services.llm_detailed_analysis import get_llm_analysis
 
 router = APIRouter()
 
@@ -46,5 +47,8 @@ def analyze_business(request: AnalysisRequest):
 
     business_data = result.get("data")
     score = calculate_score(business_data)
+    detailed_analysis = get_llm_analysis(business_data, score, request.model_choice)
 
-    return AnalysisResponse(score=score, data=business_data)
+    return AnalysisResponse(
+        score=score, data=business_data, detailed_analysis=detailed_analysis
+    )

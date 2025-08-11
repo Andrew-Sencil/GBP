@@ -1,5 +1,4 @@
 # src/scrapers/photo_scraper.py
-# To be fixed
 
 import logging
 from typing import List, Dict, Optional
@@ -29,9 +28,9 @@ class PhotoScraper:
             "gallery_anchor": [
                 "a[aria-label]"
             ],  # Our reliable anchor for all thumbnails
-            "uploader_info_container": ["div.JHngof", "div.UXc6zc"],
+            "uploader_info_container": ["div.JHngof", "div.xaIjWd "],
             "uploader_name": [
-                "span.ilzTS",
+                "span.OVC7id",
                 "span.fontBodyMedium",
             ],  # Added fallback selector
         }

@@ -70,7 +70,6 @@ class AnalysisResponse(BaseModel):
 
     score: float
     data: Dict[str, Any]
-    detailed_analysis: str
 
 
 class WebsiteSocialsData(BaseModel):

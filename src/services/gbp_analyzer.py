@@ -94,8 +94,8 @@ class GBPAnalyzer:
             business_title = _safe_get_nested_value(
                 place_data, "title", "Unknown Business"
             )
-            search_url = (
-                f"https://www.google.com/maps/search/{business_title.replace(' ', '+')}"
+            address = user_provided_address or _safe_get_nested_value(
+                place_data, "address", "Unknown Address"
             )
 
             # --- Concurrent Operations ---
@@ -108,10 +108,10 @@ class GBPAnalyzer:
                     _fetch_all_reviews, place_id, self.api_key
                 )
                 social_future = api_executor.submit(
-                    _get_social_links, place_data, business_title, self.api_key
+                    _get_social_links, place_data, business_title, address, self.api_key
                 )
                 photo_future = scraper_executor.submit(
-                    _run_photo_scraper, search_url, business_title
+                    _run_photo_scraper, place_id, business_title
                 )
 
                 all_reviews = review_future.result(timeout=60)
@@ -136,8 +136,7 @@ class GBPAnalyzer:
             result_data = {
                 "title": business_title,
                 "place_id": place_id,
-                "address": user_provided_address
-                or _safe_get_nested_value(place_data, "address"),
+                "address": address,
                 "phone": user_provided_phone
                 or _safe_get_nested_value(place_data, "phone"),
                 "website": _safe_get_nested_value(place_data, "website"),
@@ -238,6 +237,7 @@ class GBPAnalyzer:
                 "website": _safe_get_nested_value(place_data, "website"),
                 "social_links": [],
             }
+            address = _safe_get_nested_value(place_data, "address")
 
             # --- Concurrent Operations ---
             social_links = []
@@ -249,7 +249,11 @@ class GBPAnalyzer:
                         # We must pass the api_key to the helper function,
                         # as it now requires it.
                         futures["social"] = api_executor.submit(
-                            _get_social_links, place_data, business_title, self.api_key
+                            _get_social_links,
+                            place_data,
+                            business_title,
+                            address,
+                            self.api_key,
                         )
                     except Exception as e:
                         logging.error(f"Error submitting social links task: {e}")

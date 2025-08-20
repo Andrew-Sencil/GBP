@@ -45,7 +45,7 @@ def calculate_score(business_data: dict) -> float:
     print("total_image_score: ", total_image_score)
 
     # Your weighting logic remains the same
-    weighted_google_score = google_post_score * 0.20
+    weighted_google_post_score = google_post_score * 0.20
     weighted_image_score = total_image_score * 0.20
     weighted_review_recency_score = review_recency_score * 0.20
     weighted_star_score = star_rating * 0.15
@@ -53,7 +53,7 @@ def calculate_score(business_data: dict) -> float:
     weighted_fields_score = completeness_score * 0.05
     weighted_napw_score = NAPW_score * 0.05
 
-    print("weighted_google_score: ", weighted_google_score)
+    print("weighted_google_post_score: ", weighted_google_post_score)
     print("weighted_image_score: ", weighted_image_score)
     print("weighted_review_recency_score: ", weighted_review_recency_score)
     print("weighted_star_score: ", weighted_star_score)
@@ -62,7 +62,7 @@ def calculate_score(business_data: dict) -> float:
     print("weighted_napw_score: ", weighted_napw_score)
 
     business_score = (
-        weighted_google_score
+        weighted_google_post_score
         + weighted_image_score
         + weighted_review_recency_score
         + weighted_star_score

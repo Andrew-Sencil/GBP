@@ -20,16 +20,9 @@ class PhotoScraper:
     def __init__(self, check_limit: int = 100):
         self.PHOTO_CHECK_LIMIT = check_limit
         self.SELECTORS = {
-            "see_photos_button": [
-                'button:has-text("See photos")',
-                'button:has-text("All photos")',
-            ],
-            # This is only used to click the very first photo to enter the viewer
-            "first_photo_in_gallery": ['a[aria-label*="Photo"]'],
-            # This is the uploader's name, which is always a link
-            "uploader_link": ['a[href*="/contrib/"]'],
-            # The "Next" button inside the photo viewer
-            "next_button": ['button[aria-label="Next"]'],
+            "first_photo_in_gallery": 'a[aria-label*="Photo"]',
+            "uploader_link": 'a[href*="/contrib/"]',
+            "next_button": 'button[aria-label="Next"]',
         }
 
     def _get_current_uploader_type(self, page: Page, business_title: str) -> str:
@@ -38,39 +31,36 @@ class PhotoScraper:
         uploader is the Owner or a Customer.
         """
         try:
-            # Wait for the uploader link to be present. Use a short timeout.
-            # We use .last because sometimes the business name appears twice.
-            uploader_link = page.locator(self.SELECTORS["uploader_link"][0]).last
+            uploader_link = page.locator(self.SELECTORS["uploader_link"]).last
             uploader_link.wait_for(state="visible", timeout=2500)
             uploader_name = uploader_link.inner_text()
-
-            # The core logic: if the uploader's name matches the business,
-            # it's the Owner.
             if business_title.strip().lower() in uploader_name.strip().lower():
                 return "Owner"
             else:
                 return "Customer"
         except PlaywrightTimeoutError:
-            # If no link is found, it's likely a video or other media.
-            # We safely classify these as "Owner".
             logging.warning(
                 "   -> No uploader link found. Defaulting to Owner (likely a video/360 view)."  # noqa
             )
             return "Owner"
 
     def get_attributions_by_navigation(
-        self, search_url: str, business_title: str
+        self, place_id: str, business_title: str
     ) -> List[Dict]:
         """
         Main function using the robust "click Next" strategy.
+        Now constructs a direct URL using the Place ID.
         """
-        logging.info(f"Starting FINAL ROBUST scraper for: {search_url}")
+        direct_url = f"https://www.google.com/maps/place/?q=place_id:{place_id}"
+        logging.info(f"Starting FINAL ROBUST scraper for Place ID: {place_id}")
+        logging.info(f"Using direct URL: {direct_url}")
+
         attributions = []
         with sync_playwright() as p:
             browser = None
             try:
                 browser = p.chromium.launch(
-                    headless=True,
+                    headless=True,  # Set to False for debugging
                     args=["--disable-blink-features=AutomationControlled"],
                 )
                 context = browser.new_context(
@@ -83,74 +73,104 @@ class PhotoScraper:
                     "**/*.{png,jpg,jpeg,gif,svg,woff,woff2}",
                     lambda route: route.abort(),
                 )
-                page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+                page.goto(direct_url, wait_until="domcontentloaded", timeout=45000)
 
-                # Standard navigation to get to the photo gallery
                 try:
-                    page.locator('button:has-text("Reject all")').first.click(
-                        timeout=5000
-                    )
-                except Exception:
-                    pass
-                try:
-                    page.locator('div[role="feed"]').wait_for(
-                        state="visible", timeout=5000
-                    )
+                    logging.info("Attempting to dismiss cookie/consent banners...")
                     page.get_by_role(
-                        "link", name=re.compile(business_title, re.IGNORECASE)
-                    ).first.click()
-                except Exception:
+                        "button",
+                        name=re.compile(r"Reject all|Decline all", re.IGNORECASE),
+                    ).first.click(timeout=5000)
+                    logging.info("Dismissed a consent banner.")
+                except PlaywrightTimeoutError:
+                    logging.warning("No cookie/consent banner found to dismiss.")
                     pass
-                page.wait_for_selector(
-                    'div[role="main"]', state="visible", timeout=15000
+
+                logging.info("Waiting for the main business profile content to load...")
+                page.locator('div[role="main"]').first.wait_for(
+                    state="visible", timeout=20000
                 )
+                logging.info("Main content loaded.")
 
-                # --- The New, Simplified Process ---
+                viewer_opened_directly = False
+                try:
+                    logging.info("Attempt 1: Finding 'See all photos' button...")
+                    page.get_by_role(
+                        "button",
+                        name=re.compile(
+                            r"See all photos|All photos|See photos", re.IGNORECASE
+                        ),
+                    ).first.click(timeout=7000)
+                    logging.info("'See all photos' button found and clicked.")
 
-                # 1. Enter the photo gallery
-                page.locator(self.SELECTORS["see_photos_button"][0]).first.click()
+                except PlaywrightTimeoutError:
+                    logging.warning("'See all photos' button not found.")
+                    try:
+                        logging.info("Attempt 2: Finding 'Photos' tab...")
+                        page.get_by_role("tab", name="Photos").first.click(timeout=7000)
+                        logging.info("'Photos' tab found and clicked.")
+                    except PlaywrightTimeoutError:
+                        logging.warning("'Photos' tab not found.")
+                        logging.info("Attempt 3: Clicking the main hero image...")
+                        page.locator(
+                            'button[jsaction*="pane.heroHeaderImage.click"]'
+                        ).first.click(timeout=10000)
+                        logging.info("Main hero image found and clicked.")
+                        viewer_opened_directly = True
 
-                # 2. Click the VERY FIRST photo to open the viewer modal
-                page.locator(self.SELECTORS["first_photo_in_gallery"][0]).first.click(
-                    timeout=10000
-                )
+                if not viewer_opened_directly:
+                    logging.info("Entering photo viewer from gallery grid...")
+                    page.locator(self.SELECTORS["first_photo_in_gallery"]).first.click(
+                        timeout=10000
+                    )
+                else:
+                    logging.info("Photo viewer was opened directly by the main image.")
 
-                logging.info("Photo viewer opened. Starting 'Next' loop...")
+                logging.info("Photo viewer is open. Starting 'Next' loop...")
 
-                # 3. Loop by clicking the "Next" button, never returning to the gallery
+                # --- IMPROVED AND MORE STABLE LOOP LOGIC ---
                 for i in range(self.PHOTO_CHECK_LIMIT):
-                    # A hard pause is the most reliable way to wait for content to load
-                    page.wait_for_timeout(750)
+                    page.wait_for_timeout(500)  # Short pause for content to settle
 
                     logging.info(f"---> Analyzing photo {i+1}...")
-
-                    # Get the uploader of the CURRENTLY visible photo
                     uploader_type = self._get_current_uploader_type(
                         page, business_title
                     )
                     attributions.append({"uploader": uploader_type})
                     logging.info(f"   -> Classified as: {uploader_type}")
 
-                    # Check if we are on the last photo
                     if i >= self.PHOTO_CHECK_LIMIT - 1:
                         logging.info("Reached photo check limit.")
                         break
 
-                    # Find and click the "Next" button to proceed
-                    next_button = page.locator(self.SELECTORS["next_button"][0])
+                    try:
+                        # First, wait for the 'Next' button to be visible.
+                        next_button = page.locator(self.SELECTORS["next_button"])
+                        next_button.wait_for(
+                            state="visible", timeout=2500
+                        )  # Wait up to 2.5s for it to appear
 
-                    # If the "Next" button is disabled, we're at the end of the gallery
-                    if not next_button.is_enabled(timeout=2000):
+                        # If it is visible, check if it's enabled.
+                        # If not, we're at the end.
+                        if not next_button.is_enabled():
+                            logging.info(
+                                "'Next' button is disabled. End of gallery reached."
+                            )
+                            break
+
+                        # If it's visible and enabled, click it.
+                        next_button.click()
+
+                    except PlaywrightTimeoutError:
+                        # If the button never becomes visible, we've reached the end.
                         logging.info(
-                            "'Next' button is disabled. End of gallery reached."
+                            "Could not find a visible 'Next' button. Assuming end of gallery."  # noqa
                         )
                         break
 
-                    next_button.click()
-
             except Exception as e:
                 logging.error(f"Critical error during scraping process: {e}")
-                if "page" in locals():
+                if "page" in locals() and not page.is_closed():
                     page.screenshot(path="fatal_error_screenshot.png")
             finally:
                 if browser:

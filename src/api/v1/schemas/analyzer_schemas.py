@@ -90,6 +90,11 @@ class DetailedAnalysisRequest(BaseModel):
         description="The data object from the initial analysis."
     )
 
+    model_choice: ModelChoice = Field(
+        default=ModelChoice.FLASH,
+        description="Choose the LLM to use for the detailed analysis.",
+    )
+
 
 class DetailedAnalysisResponse(BaseModel):
     """The response body for the new /detailed-analysis endpoint."""

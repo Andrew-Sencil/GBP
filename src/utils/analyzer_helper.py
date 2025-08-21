@@ -155,13 +155,18 @@ def _filter_posts_by_recency(all_posts: List[Dict]) -> int:
     return recent_post_count
 
 
-def _fetch_knowledge_graph_socials(query: str, api_key: str) -> list:
+def _fetch_knowledge_graph_socials(
+    business_title: str, address: str, api_key: str
+) -> list:
     """
     Enhanced social media fetching with better error handling.
     """
-    if not query:
+    if not business_title or not address:
         logging.warning("No query provided for social media fetching")
         return []
+
+    query = f"{business_title}, {address}"
+    logging.info(f"Fetching social links with specific query: '{query}'")
 
     try:
         params = {
@@ -258,18 +263,18 @@ def _get_photo_counts(business_title: str, photo_attributions: List[Dict]) -> di
         return default_counts
 
 
-def _run_photo_scraper(search_url: str, business_title: str) -> list:
+def _run_photo_scraper(place_id: str, business_title: str) -> list:
     """
     Enhanced photo scraper with better error handling and timeout management.
     """
-    if not search_url or not business_title:
+    if not place_id or not business_title:
         logging.warning("Missing search_url or business_title for photo scraping")
         return []
 
     try:
         with ProcessPoolExecutor(max_workers=1) as executor:
             future = executor.submit(
-                run_photo_scraper_process, search_url, business_title
+                run_photo_scraper_process, place_id, business_title
             )
             try:
                 result = future.result(timeout=300)  # 5 minute timeout
@@ -285,11 +290,13 @@ def _run_photo_scraper(search_url: str, business_title: str) -> list:
         return []
 
 
-def _get_social_links(place_data: dict, query: str, api_key: str) -> list:
+def _get_social_links(
+    place_data: dict, business_title: str, address: str, api_key: str
+) -> list:
 
     links = place_data.get("links", []) if place_data else []
-    if not links and query:
-        links = _fetch_knowledge_graph_socials(query, api_key)
+    if not links and business_title and address:
+        links = _fetch_knowledge_graph_socials(business_title, address, api_key)
     return links
 
 

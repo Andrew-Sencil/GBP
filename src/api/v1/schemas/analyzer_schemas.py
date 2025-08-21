@@ -70,7 +70,6 @@ class AnalysisResponse(BaseModel):
 
     score: float
     data: Dict[str, Any]
-    detailed_analysis: str
 
 
 class WebsiteSocialsData(BaseModel):
@@ -89,6 +88,11 @@ class DetailedAnalysisRequest(BaseModel):
     score: float = Field(description="The numerical score from the initial analysis.")
     data: Dict[str, Any] = Field(
         description="The data object from the initial analysis."
+    )
+
+    model_choice: ModelChoice = Field(
+        default=ModelChoice.FLASH,
+        description="Choose the LLM to use for the detailed analysis.",
     )
 
 

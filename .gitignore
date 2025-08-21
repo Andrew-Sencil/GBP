@@ -1,2 +1,5 @@
 .env
-.csv
+*.csv
+*.png
+
+__pycache__

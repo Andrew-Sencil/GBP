@@ -6,6 +6,11 @@
 FROM python:3.12-slim as builder
 RUN pip install poetry==1.8.2
 RUN poetry config virtualenvs.in-project true
+
+# --- ADD THIS LINE ---
+# Increase the HTTP timeout for installers to 5 minutes to handle slow network connections.
+RUN poetry config installer.http-timeout 300
+
 WORKDIR /app
 COPY pyproject.toml poetry.lock* ./
 RUN poetry install --no-root --only main

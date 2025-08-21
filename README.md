@@ -260,6 +260,9 @@ docker run -p 8000:8000 --env-file .env gbp-analyzer
 
 ## 🧪 Testing
 
+This testing is only used when you want to experiment new shop and you don't have any place ID yet.
+You can use this as instructed below and you can add a specific place after the shops name.
+
 Run the command-line test script to verify your setup:
 
 ```bash

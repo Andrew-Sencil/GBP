@@ -1,56 +1,68 @@
 # syntax=docker/dockerfile:1
+# Final Version: A secure, efficient, and reliable Dockerfile combining best practices.
 
-# ---- Builder Stage ----
-# This stage's only job is to install our Python dependencies into a .venv.
-# We no longer need to install Playwright's browsers here.
-FROM python:3.12-slim as builder
-RUN pip install poetry==1.8.2
-RUN poetry config virtualenvs.in-project true
+# =================================================================
+# 1. Base Image: Start with a specific, small, and official Python image.
+# =================================================================
+FROM python:3.12-slim-bullseye
 
-# --- ADD THIS LINE ---
-# Increase the HTTP timeout for installers to 5 minutes to handle slow network connections.
-RUN poetry config installer.http-timeout 300
-
-WORKDIR /app
-COPY pyproject.toml poetry.lock* ./
-RUN poetry install --no-root --only main
-
-
-# ---- Final, Production Stage ----
-# --- THE DEFINITIVE FIX ---
-# We start from the official Playwright image, which has all OS dependencies and browsers pre-installed.
-FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy as base
-
-# Set Python environment variables
+# =================================================================
+# 2. Environment Setup: Configure the environment for non-interactive builds.
+#    - Use global locations for Poetry and Playwright so all users can access them.
+# =================================================================
+ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV POETRY_VIRTUALENVS_CREATE=false
+ENV POETRY_HOME="/opt/poetry"
+ENV PLAYWRIGHT_BROWSERS_PATH="/ms-playwright"
+ENV PATH="$POETRY_HOME/bin:$PATH"
 
+# =================================================================
+# 3. System Dependencies: Install curl for Poetry and build-essential for packages.
+# =================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# =================================================================
+# 4. Install Poetry
+# =================================================================
+RUN curl -sSL https://install.python-poetry.org | python3 -
+
+# =================================================================
+# 5. Application Setup: Create app directory and copy dependency files for caching.
+# =================================================================
 WORKDIR /app
+COPY pyproject.toml poetry.lock* /app/
 
-# Create a non-root user for security.
-# The Playwright image runs as root by default, so we create our own user.
-ARG UID=10001
-RUN adduser \
-    --disabled-password \
-    --gecos "" \
-    --home "/home/appuser" \
-    --shell "/bin/sh" \
-    --uid "${UID}" \
-    appuser
+# =================================================================
+# 6. Install Dependencies:
+#    - Combine 'poetry install' and 'playwright install' into one layer for efficiency.
+# =================================================================
+RUN POETRY_INSTALLER_HTTP_TIMEOUT=300 poetry install --no-root --only main \
+    && poetry run playwright install chromium --with-deps
 
-# Copy the virtual environment from the builder stage
-COPY --from=builder /app/.venv .venv
+# =================================================================
+# 7. Security: Create a non-root user to run the application.
+# =================================================================
+RUN useradd --create-home --shell /bin/bash appuser
 
-# Set the PATH to include our virtual environment
-ENV PATH="/app/.venv/bin:$PATH"
+# =================================================================
+# 8. Copy Application Code & Set Permissions
+#    - Give the appuser ownership of the app code AND the Playwright browsers.
+# =================================================================
+COPY . /app
+RUN chown -R appuser:appuser /app /ms-playwright
 
-# Switch to our non-privileged user
+# =================================================================
+# 9. Switch to Non-Root User
+# =================================================================
 USER appuser
 
-# Copy the application source code
-COPY . .
-
+# =================================================================
+# 10. Expose Port & Define CMD
+# =================================================================
 EXPOSE 8000
-
-# Run the application. Uvicorn will be found in the .venv's PATH.
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "asyncio"]

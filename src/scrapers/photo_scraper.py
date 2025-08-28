@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import List, Dict
 from playwright.sync_api import (
     sync_playwright,
@@ -7,14 +8,16 @@ from playwright.sync_api import (
 )
 import re
 
+# --- Set up basic logging ---
+# It's good practice to get the logger by name for better control in larger apps
+logger = logging.getLogger(__name__)
+
 
 class PhotoScraper:
     """
-    FINAL WORKING VERSION: This scraper abandons the flawed looping methods
-    and mimics human behavior by repeatedly clicking the 'Next' button inside
-    the photo viewer. This is the most robust and stable strategy to prevent
-
-    stale element errors and handle different media types.
+    Optimized for Docker: This scraper mimics human behavior by repeatedly
+    clicking the 'Next' button inside the photo viewer. It's designed to be
+    robust for headless execution in a containerized environment.
     """
 
     def __init__(self, check_limit: int = 100):
@@ -24,6 +27,9 @@ class PhotoScraper:
             "uploader_link": 'a[href*="/contrib/"]',
             "next_button": 'button[aria-label="Next"]',
         }
+        # Define an output directory for screenshots, useful within Docker
+        self.output_dir = os.getenv("OUTPUT_DIR", "/app/output")
+        os.makedirs(self.output_dir, exist_ok=True)
 
     def _get_current_uploader_type(self, page: Page, business_title: str) -> str:
         """
@@ -39,7 +45,7 @@ class PhotoScraper:
             else:
                 return "Customer"
         except PlaywrightTimeoutError:
-            logging.warning(
+            logger.warning(
                 "   -> No uploader link found. Defaulting to Owner (likely a video/360 view)."  # noqa
             )
             return "Owner"
@@ -49,19 +55,26 @@ class PhotoScraper:
     ) -> List[Dict]:
         """
         Main function using the robust "click Next" strategy.
-        Now constructs a direct URL using the Place ID.
+        Constructs a direct URL using the Place ID for stability.
         """
         direct_url = f"https://www.google.com/maps/place/?q=place_id:{place_id}"
-        logging.info(f"Starting FINAL ROBUST scraper for Place ID: {place_id}")
-        logging.info(f"Using direct URL: {direct_url}")
+        logger.info(f"Starting scraper for Place ID: {place_id}")
+        logger.info(f"Using direct URL: {direct_url}")
 
         attributions = []
         with sync_playwright() as p:
             browser = None
             try:
+                # Using --no-sandbox is often necessary in Docker environments
                 browser = p.chromium.launch(
-                    headless=True,  # Set to False for debugging
-                    args=["--disable-blink-features=AutomationControlled"],
+                    headless=True,
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",  # Recommended for Docker to prevent
+                        # shared memory issues
+                    ],
                 )
                 context = browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",  # noqa
@@ -69,6 +82,9 @@ class PhotoScraper:
                     locale="en-US",
                 )
                 page = context.new_page()
+
+                # Aborting image/font requests is a key optimization for speed
+                # and resource use
                 page.route(
                     "**/*.{png,jpg,jpeg,gif,svg,woff,woff2}",
                     lambda route: route.abort(),
@@ -76,104 +92,97 @@ class PhotoScraper:
                 page.goto(direct_url, wait_until="domcontentloaded", timeout=45000)
 
                 try:
-                    logging.info("Attempting to dismiss cookie/consent banners...")
+                    logger.info("Attempting to dismiss cookie/consent banners...")
                     page.get_by_role(
                         "button",
                         name=re.compile(r"Reject all|Decline all", re.IGNORECASE),
                     ).first.click(timeout=5000)
-                    logging.info("Dismissed a consent banner.")
+                    logger.info("Dismissed a consent banner.")
                 except PlaywrightTimeoutError:
-                    logging.warning("No cookie/consent banner found to dismiss.")
+                    logger.warning("No cookie/consent banner found to dismiss.")
                     pass
 
-                logging.info("Waiting for the main business profile content to load...")
+                logger.info("Waiting for the main business profile content to load...")
                 page.locator('div[role="main"]').first.wait_for(
                     state="visible", timeout=20000
                 )
-                logging.info("Main content loaded.")
+                logger.info("Main content loaded.")
 
                 viewer_opened_directly = False
                 try:
-                    logging.info("Attempt 1: Finding 'See all photos' button...")
                     page.get_by_role(
                         "button",
                         name=re.compile(
                             r"See all photos|All photos|See photos", re.IGNORECASE
                         ),
                     ).first.click(timeout=7000)
-                    logging.info("'See all photos' button found and clicked.")
+                    logger.info("'See all photos' button found and clicked.")
 
                 except PlaywrightTimeoutError:
-                    logging.warning("'See all photos' button not found.")
+                    logger.warning("'See all photos' button not found.")
                     try:
-                        logging.info("Attempt 2: Finding 'Photos' tab...")
                         page.get_by_role("tab", name="Photos").first.click(timeout=7000)
-                        logging.info("'Photos' tab found and clicked.")
+                        logger.info("'Photos' tab found and clicked.")
                     except PlaywrightTimeoutError:
-                        logging.warning("'Photos' tab not found.")
-                        logging.info("Attempt 3: Clicking the main hero image...")
+                        logger.warning("'Photos' tab not found.")
                         page.locator(
                             'button[jsaction*="pane.heroHeaderImage.click"]'
                         ).first.click(timeout=10000)
-                        logging.info("Main hero image found and clicked.")
+                        logger.info("Main hero image found and clicked.")
                         viewer_opened_directly = True
 
                 if not viewer_opened_directly:
-                    logging.info("Entering photo viewer from gallery grid...")
+                    logger.info("Entering photo viewer from gallery grid...")
                     page.locator(self.SELECTORS["first_photo_in_gallery"]).first.click(
                         timeout=10000
                     )
                 else:
-                    logging.info("Photo viewer was opened directly by the main image.")
+                    logger.info("Photo viewer was opened directly by the main image.")
 
-                logging.info("Photo viewer is open. Starting 'Next' loop...")
+                logger.info("Photo viewer is open. Starting 'Next' loop...")
 
-                # --- IMPROVED AND MORE STABLE LOOP LOGIC ---
                 for i in range(self.PHOTO_CHECK_LIMIT):
-                    page.wait_for_timeout(500)  # Short pause for content to settle
+                    page.wait_for_timeout(500)
 
-                    logging.info(f"---> Analyzing photo {i+1}...")
+                    logger.info(f"---> Analyzing photo {i+1}...")
                     uploader_type = self._get_current_uploader_type(
                         page, business_title
                     )
                     attributions.append({"uploader": uploader_type})
-                    logging.info(f"   -> Classified as: {uploader_type}")
+                    logger.info(f"   -> Classified as: {uploader_type}")
 
                     if i >= self.PHOTO_CHECK_LIMIT - 1:
-                        logging.info("Reached photo check limit.")
+                        logger.info("Reached photo check limit.")
                         break
 
                     try:
-                        # First, wait for the 'Next' button to be visible.
                         next_button = page.locator(self.SELECTORS["next_button"])
-                        next_button.wait_for(
-                            state="visible", timeout=2500
-                        )  # Wait up to 2.5s for it to appear
+                        next_button.wait_for(state="visible", timeout=2500)
 
-                        # If it is visible, check if it's enabled.
-                        # If not, we're at the end.
                         if not next_button.is_enabled():
-                            logging.info(
+                            logger.info(
                                 "'Next' button is disabled. End of gallery reached."
                             )
                             break
 
-                        # If it's visible and enabled, click it.
                         next_button.click()
 
                     except PlaywrightTimeoutError:
-                        # If the button never becomes visible, we've reached the end.
-                        logging.info(
+                        logger.info(
                             "Could not find a visible 'Next' button. Assuming end of gallery."  # noqa
                         )
                         break
 
             except Exception as e:
-                logging.error(f"Critical error during scraping process: {e}")
+                logger.error(f"Critical error during scraping process: {e}")
                 if "page" in locals() and not page.is_closed():
-                    page.screenshot(path="fatal_error_screenshot.png")
+                    screenshot_path = os.path.join(
+                        self.output_dir, f"fatal_error_{place_id}.png"
+                    )
+                    page.screenshot(path=screenshot_path)
+                    logger.info(f"Screenshot saved to {screenshot_path}")
             finally:
                 if browser:
                     browser.close()
-        logging.info("Photo scraping finished.")
+        logger.info("Photo scraping finished.")
         return attributions

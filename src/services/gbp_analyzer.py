@@ -17,6 +17,11 @@ from src.utils.analyzer_helper import (
     _get_photo_counts,
     _safe_api_call,
 )
+from src.utils.computation import calculate_score
+from src.services.supabase import supabase, insert_data
+from src.services.job_status import update_job_status
+from src.services.llm_detailed_analysis import get_llm_analysis
+from src.core.config import config
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
@@ -32,6 +37,190 @@ class GBPAnalyzer:
             raise ValueError("An API key is required to initialize the GmbAnalyzer.")
 
         self.api_key = api_key
+
+    def create_analysis_job(
+        self,
+        business_name: Optional[str] = None,
+        place_id: Optional[str] = None,
+        address: Optional[str] = None,
+        star_rating: Optional[float] = None,
+        review_count: Optional[int] = None,
+        phone_number: Optional[str] = None,
+    ) -> dict:
+        """
+        Create a new analysis job with real place_id.
+        This method resolves the place_id first, then creates the job.
+
+        Returns:
+            dict: {"success": bool,
+            "job_id": str,
+            "status": str,
+            "message": str,
+            "place_id": str}
+        """
+
+        try:
+            resolved_place_id = place_id
+
+            if not resolved_place_id:
+                if not business_name:
+                    return {
+                        "success": False,
+                        "error": "Either business_name or place_id must be provided.",
+                    }
+
+                search_params = {
+                    "engine": "google_maps",
+                    "q": business_name,
+                    "type": "search",
+                    "api_key": self.api_key,
+                }
+
+                initial_results = _safe_api_call(search_params, "initial search")
+
+                if not initial_results:
+                    return {
+                        "success": False,
+                        "error": f"No results for business_name: '{business_name}'",
+                    }
+
+                initial_search_result = (
+                    initial_results.get("place_results")
+                    or (initial_results.get("local_results", [])[0:1] or [None])[0]
+                )
+
+                if not initial_search_result:
+                    return {
+                        "success": False,
+                        "error": f"No GBP found for business_name: '{business_name}'",
+                    }
+
+                resolved_place_id = initial_search_result.get("place_id")
+
+                if not resolved_place_id:
+                    return {
+                        "success": False,
+                        "error": "Could not extract place_id from search results.",
+                    }
+
+            placeholder_data = {
+                "place_id": resolved_place_id,
+                "title": business_name or "Analysis in progress...",
+                "address": address or "",
+                "phone": phone_number or "",
+                "rating": star_rating or 0.0,
+                "reviews_count": review_count or 0,
+                "score": 0,
+                "website": "",
+                "description": "Analysis in progress...",
+                "social_links": [],
+                "recent_reviews": 0,
+                "posts_count": 0,
+                "photo_counts_by_uploader": {},
+                "total_photos_analyzed": 0,
+                "attributes_count": 0,
+            }
+
+            supabase.table("GBP-results").upsert(
+                [placeholder_data], on_conflict="place_id"
+            ).execute()
+
+            status = "Pending"
+            job_data = {"place_id": resolved_place_id, "status": status}
+            result = supabase.table("jobs").insert(job_data).execute()
+
+            if result.data and len(result.data) > 0:
+                job_id = result.data[0].get("id")
+                logging.info(
+                    f"Created analysis job {job_id} for place_id: {resolved_place_id}"
+                )
+
+                return {
+                    "success": True,
+                    "job_id": str(job_id),
+                    "status": status,
+                    "message": "Analysis job created successfully",
+                    "place_id": resolved_place_id,
+                }
+            else:
+                return {"success": False, "error": "Failed to create job record"}
+
+        except Exception as e:
+            logging.error(f"Failed to create analysis job: {e}")
+            return {"success": False, "error": f"Job creation failed: {str(e)}"}
+
+    def run_background_analysis(
+        self,
+        job_id: str,
+        business_name: Optional[str] = None,
+        place_id: Optional[str] = None,
+        address: Optional[str] = None,
+        star_rating: Optional[float] = None,
+        review_count: Optional[int] = None,
+        phone_number: Optional[str] = None,
+    ) -> None:
+        """
+        Run the complete analysis in the background and update job status.
+        This method is designed to be called as a background task.
+        """
+
+        try:
+            update_job_status(job_id, "Analysis Started")
+
+            update_job_status(job_id, "Analyzing")
+
+            result = self.analyze(
+                query=business_name,
+                place_id=place_id,
+                user_provided_address=address,
+                user_provided_rating=star_rating,
+                user_provided_reviews=review_count,
+                user_provided_phone=phone_number,
+            )
+
+            if not result or not result.get("success"):
+                error_message = (
+                    result.get("error", "Analysis failed.")
+                    if result
+                    else "Analysis returned no result"
+                )
+                logging.error(f"Analysis failed for job {job_id}: {error_message}")
+                update_job_status(job_id, "Analysis Failed")
+
+                return
+
+            business_data = result.get("data")
+            if not business_data:
+                logging.error(f"No business data returned for job {job_id}")
+                update_job_status(job_id, "Analysis Failed")
+                return
+
+            real_place_id = business_data.get("place_id")
+            if real_place_id:
+                try:
+                    supabase.table("jobs").update({"place_id": real_place_id}).eq(
+                        "id", job_id
+                    ).execute()
+                    logging.info(f"Updated job {job_id} place_id to {real_place_id}")
+
+                except Exception as e:
+                    logging.warning(f"Failed to update job place_id: {e}")
+
+            update_job_status(job_id, "Writing the Analysis")
+
+            try:
+                insert_data("GBP-results", business_data)
+                logging.info(f"Successfully saved business data for job {job_id}")
+
+                update_job_status(job_id, "Analysis Finished")
+
+            except Exception as e:
+                logging.error(f"Failed to save business data for job {job_id}: {e}")
+                update_job_status(job_id, "Analysis Failed")
+
+        except Exception as e:
+            logging.error(f"Background analysis failed for job {job_id}: {e}")
+            update_job_status(job_id, "Analysis Failed")
 
     def analyze(
         self,
@@ -132,7 +321,6 @@ class GBPAnalyzer:
                             if isinstance(attribute_group, list):
                                 attributes_list.extend(attribute_group)
 
-            # --- Final Assembly ---
             result_data = {
                 "title": business_title,
                 "place_id": place_id,
@@ -156,7 +344,63 @@ class GBPAnalyzer:
                 ),
                 "total_photos_analyzed": len(photo_attributions),
             }
-            return {"success": True, "data": result_data}
+
+            score = calculate_score(result_data)
+
+            # --- Final Assembly ---
+            output = {
+                "title": business_title,
+                "place_id": place_id,
+                "address": address,
+                "phone": user_provided_phone
+                or _safe_get_nested_value(place_data, "phone"),
+                "website": _safe_get_nested_value(place_data, "website"),
+                "description": _safe_get_nested_value(place_data, "description"),
+                "attributes_count": len(attributes_list),
+                "rating": user_provided_rating
+                or _safe_get_nested_value(place_data, "rating", 0.0),
+                "reviews_count": user_provided_reviews
+                or _safe_get_nested_value(place_data, "reviews", 0),
+                "social_links": social_links,
+                "recent_reviews": len(_filter_reviews_by_recency(all_reviews)),
+                "posts_count": recent_posts_count,
+                "photo_counts_by_uploader": _get_photo_counts(
+                    business_title, photo_attributions
+                ),
+                "total_photos_analyzed": len(photo_attributions),
+                "score": score,
+            }
+
+            llm_analysis = get_llm_analysis(
+                business_data=output, model_choice=config.GEMINI_MODEL_FLASH
+            )
+
+            final_output = {
+                "title": business_title,
+                "place_id": place_id,
+                "address": address,
+                "phone": user_provided_phone
+                or _safe_get_nested_value(place_data, "phone"),
+                "website": _safe_get_nested_value(place_data, "website"),
+                "description": _safe_get_nested_value(place_data, "description"),
+                "attributes_count": len(attributes_list),
+                "rating": user_provided_rating
+                or _safe_get_nested_value(place_data, "rating", 0.0),
+                "reviews_count": user_provided_reviews
+                or _safe_get_nested_value(place_data, "reviews", 0),
+                "social_links": social_links,
+                "recent_reviews": len(_filter_reviews_by_recency(all_reviews)),
+                "posts_count": recent_posts_count,
+                "photo_counts_by_uploader": _get_photo_counts(
+                    business_title, photo_attributions
+                ),
+                "total_photos_analyzed": len(photo_attributions),
+                "score": score,
+                "llm_analysis": llm_analysis,
+            }
+
+            return {"success": True, "data": final_output}
+
         except Exception as e:
             logging.error(
                 f"Critical error in analyze method: {e}\n{traceback.format_exc()}"

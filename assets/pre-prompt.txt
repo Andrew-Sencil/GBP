@@ -7,8 +7,6 @@ You are an expert Google Business Profile analyst. Your task is to provide a con
     {business_data_json}
     ```
 
-    **Overall Health Score:** {score}/10
-
     **Instructions:**
     1.  Start with a 2-3 sentence summary of the business's overall online presence,
         mentioning its key strengths and weaknesses based on the data.

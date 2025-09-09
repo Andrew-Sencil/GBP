@@ -27,7 +27,6 @@ def generate_detailed_analysis(request: DetailedAnalysisRequest):
 
     analysis_text = get_llm_analysis(
         business_data=request.data,
-        score=request.score,
         model_choice=request.model_choice,
     )
 

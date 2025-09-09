@@ -68,8 +68,25 @@ class AnalysisResponse(BaseModel):
     It contains the final score and the detailed raw data.
     """
 
-    score: float
-    data: Dict[str, Any]
+    status: str = Field(..., description="The status of the analysis.")
+
+    message: str = Field(
+        ..., description="A message indicating the status of the analysis."
+    )
+
+    job_id: Optional[str] = Field("", description="The job ID for the analysis.")
+
+
+class JobstatusResponse(BaseModel):
+    status: str
+    job_id: str
+    message: str = ""
+    place_id: str = ""
+    data: Optional[Dict[str, Any]] = None
+
+
+class JobStatusUpdateRequest(BaseModel):
+    status: str
 
 
 class WebsiteSocialsData(BaseModel):
@@ -85,11 +102,9 @@ class WebsiteSocialsResponse(BaseModel):
 class DetailedAnalysisRequest(BaseModel):
     """The request body for the new /detailed-analysis endpoint."""
 
-    score: float = Field(description="The numerical score from the initial analysis.")
     data: Dict[str, Any] = Field(
         description="The data object from the initial analysis."
     )
-
     model_choice: ModelChoice = Field(
         default=ModelChoice.FLASH,
         description="Choose the LLM to use for the detailed analysis.",
